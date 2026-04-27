@@ -26,10 +26,16 @@ variable "akeyless_gcp_audience" {
   default     = "akeyless.io"
 }
 
-variable "akeyless_api_url" {
-  description = "Akeyless API gateway URL."
+variable "akeyless_gateway_url" {
+  description = <<-EOT
+    URL of *your* Akeyless gateway's V2 SDK endpoint, NOT the public api.akeyless.io.
+    The dynamic-secret-create-gcp operation is gateway-side and is not exposed on
+    the public API. Examples:
+      "https://gateway.example.com:8081/v2"     # gateway exposed via ingress
+      "http://127.0.0.1:8081/v2"                # via port-forward into the cluster
+    Trailing /v2 is required for the akeyless-community/akeyless provider.
+  EOT
   type        = string
-  default     = "https://api.akeyless.io"
 }
 
 variable "akeyless_path_prefix" {

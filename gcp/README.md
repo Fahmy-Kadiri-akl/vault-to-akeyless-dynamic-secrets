@@ -28,7 +28,7 @@ Discovery is fully live. Listing happens via `data "http"` against `<vault_addre
   export TF_VAR_vault_token="$VAULT_TOKEN"
   ```
 
-- Akeyless: an access ID. The default provider config in `main.tf` uses the GCP-SA auth method (`gcp_login`). If you are not running on a GCE host bound to your Akeyless gateway, swap to a different login block.
+- Akeyless: an access ID and your gateway's V2 SDK URL. The provider's `api_gateway_address` must point at *your* gateway, not `https://api.akeyless.io`; the public API does not expose `dynamic-secret-create-gcp`. Set `var.akeyless_gateway_url` to something like `https://gateway.example.com:8081/v2` (whatever your gateway is reachable on, with `/v2` appended). The default login is the GCP-SA auth method (`gcp_login`); if you are not running on a GCE host bound to that gateway's access ID, swap the login block in `main.tf`.
 - A *parent* Google service account whose JSON key gets stored in the Akeyless target. Akeyless will use this parent SA to mint per-lease credentials for the child SAs your dynamic secrets reference.
 
 ### IAM roles required on the parent SA
@@ -68,13 +68,19 @@ gcloud iam service-accounts keys create ./parent-sa.json \
   --project     "$PROJECT"
 ```
 
-In `terraform.tfvars`:
+Pass it to Terraform as an env var (cleanest, since `terraform.tfvars` does not accept the `file()` function):
 
-```hcl
-parent_sa_credentials = file("${path.module}/parent-sa.json")
+```bash
+export TF_VAR_parent_sa_credentials="$(cat ./parent-sa.json)"
 ```
 
-The Terraform variable is typed `string` and marked `sensitive`. The TF code itself does no `file()` reads, so it is your call whether to inline the JSON or load it from a file.
+Or via `-var` on the command line:
+
+```bash
+terraform plan -var "parent_sa_credentials=$(cat ./parent-sa.json)"
+```
+
+The Terraform variable is typed `string` and marked `sensitive`. The module base64-encodes it before storing it on the Akeyless target.
 
 ## Rolesets
 
@@ -104,7 +110,7 @@ If you do not want to migrate a particular roleset, remove it from Vault before 
 | `vault_gcp_mount`          | `string`             | `"gcp"`                      | Path of the Vault GCP secrets engine mount.                                                                                                            |
 | `akeyless_access_id`       | `string`             | required                     | Akeyless access ID used by the provider login block.                                                                                                   |
 | `akeyless_gcp_audience`    | `string`             | `"akeyless.io"`              | Audience used by the GCP-SA auth method.                                                                                                               |
-| `akeyless_api_url`         | `string`             | `"https://api.akeyless.io"`  | Akeyless API gateway URL.                                                                                                                              |
+| `akeyless_gateway_url`     | `string`             | required                     | Your gateway's V2 SDK URL with `/v2` appended (e.g. `https://gateway.example.com:8081/v2`). Not the public `api.akeyless.io`.                          |
 | `akeyless_path_prefix`     | `string`             | `"/migrated-from-vault/gcp"` | Path prefix under which migrated dynamic secrets are created.                                                                                          |
 | `akeyless_target_name`     | `string`             | `"migrated-from-vault-gcp"`  | Name of the Akeyless GCP target this module creates.                                                                                                   |
 | `parent_sa_credentials`    | `string` (sensitive) | required                     | Raw JSON content of the parent SA key. The module base64-encodes it before sending.                                                                    |
@@ -114,9 +120,10 @@ If you do not want to migrate a particular roleset, remove it from Vault before 
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars (akeyless_access_id, paths, parent_sa_credentials, ...)
+# edit terraform.tfvars: set akeyless_access_id, akeyless_gateway_url, paths
 export TF_VAR_vault_address="$VAULT_ADDR"
 export TF_VAR_vault_token="$VAULT_TOKEN"
+export TF_VAR_parent_sa_credentials="$(cat ./parent-sa.json)"
 terraform init
 terraform plan
 terraform apply

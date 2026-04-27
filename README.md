@@ -63,7 +63,8 @@ vault-to-akeyless-dynamic-secrets/
   - Token with `read` plus `list` on `<mount>/static-account`, `<mount>/impersonated-account`, `<mount>/roleset` and the per-entity paths, via `var.vault_token` or `export TF_VAR_vault_token="$VAULT_TOKEN"`.
 - Akeyless access:
   - An access ID that can create targets and dynamic secrets under the path prefix you pick.
-  - The default provider config uses the GCP-SA auth method. If you are not running on a GCE host bound to your Akeyless gateway, swap the login block in `gcp/main.tf` for `api_key_login` or another supported method.
+  - Your gateway's V2 SDK URL (e.g. `https://gateway.example.com:8081/v2`). The provider must point at *your* gateway, not `https://api.akeyless.io`; the public API does not expose `dynamic-secret-create-gcp`.
+  - The default login block uses the GCP-SA auth method. If you are not running on a GCE host bound to your gateway's access ID, swap the block in `gcp/main.tf` for `api_key_login` or another supported method.
 - The parent SA JSON for the Akeyless GCP target. The gcloud command and the IAM roles it needs are in `gcp/README.md`.
 
 ## Quickstart (GCP)
@@ -71,9 +72,10 @@ vault-to-akeyless-dynamic-secrets/
 ```bash
 cd gcp/
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars: set akeyless_access_id, paths, parent_sa_credentials
+# edit terraform.tfvars: set akeyless_access_id, akeyless_gateway_url, paths
 export TF_VAR_vault_address="$VAULT_ADDR"
 export TF_VAR_vault_token="$VAULT_TOKEN"
+export TF_VAR_parent_sa_credentials="$(cat ./parent-sa.json)"
 terraform init
 terraform plan
 # review the planned akeyless_target_gcp + akeyless_dynamic_secret_gcp resources

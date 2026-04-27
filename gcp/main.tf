@@ -31,7 +31,7 @@ provider "vault" {
 # the one you want. See:
 # https://registry.terraform.io/providers/akeyless-community/akeyless/latest/docs
 provider "akeyless" {
-  api_gateway_address = var.akeyless_api_url
+  api_gateway_address = var.akeyless_gateway_url
 
   gcp_login {
     access_id = var.akeyless_access_id

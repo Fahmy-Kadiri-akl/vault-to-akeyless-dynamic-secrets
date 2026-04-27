@@ -4,13 +4,15 @@
 # Copy to terraform.tfvars and fill in real values. terraform.tfvars is
 # gitignored; this *.tfvars.example file is the only one committed.
 #
-# vault_address and vault_token are easiest to supply via environment:
+# Vault address + token and the parent SA JSON are easiest to supply via
+# environment variables:
 #
 #   export TF_VAR_vault_address="$VAULT_ADDR"
 #   export TF_VAR_vault_token="$VAULT_TOKEN"
+#   export TF_VAR_parent_sa_credentials="$(cat ./parent-sa.json)"
 #
-# in which case you do NOT set them here. Sensitive values (token, parent SA
-# JSON) should NEVER be committed.
+# (terraform.tfvars only accepts literal values; the file() function is not
+# supported there, so load the JSON via the env var or the -var flag.)
 ###############################################################################
 
 # ------------------------------------------------------------------
@@ -25,25 +27,24 @@ vault_gcp_mount = "gcp"
 # ------------------------------------------------------------------
 akeyless_access_id    = "p-xxxxxxxxxxxx"
 akeyless_gcp_audience = "akeyless.io"
-akeyless_api_url      = "https://api.akeyless.io"
-akeyless_path_prefix  = "/migrated-from-vault/gcp"
-akeyless_target_name  = "migrated-from-vault-gcp"
+
+# Your gateway's V2 SDK URL, NOT https://api.akeyless.io. Public api does not
+# expose dynamic-secret-create-gcp; only customer gateways do. Use whatever
+# URL your gateway is reachable on, with /v2 appended. Examples:
+#   https://gateway.example.com:8081/v2
+#   http://127.0.0.1:8081/v2
+akeyless_gateway_url = "https://your-gateway.example.com:8081/v2"
+
+akeyless_path_prefix = "/migrated-from-vault/gcp"
+akeyless_target_name = "migrated-from-vault-gcp"
 
 # ------------------------------------------------------------------
 # Parent SA credentials
 # ------------------------------------------------------------------
 # Raw JSON content of the parent SA key. The module base64-encodes it before
-# sending to Akeyless. Two common patterns:
-#
-#   parent_sa_credentials = file("${path.module}/parent-sa.json")
-#
-# or paste the JSON inline (heredoc):
-#
-#   parent_sa_credentials = <<EOT
-#   {paste the parent SA key JSON content here}
-#   EOT
-#
-parent_sa_credentials = "<paste-parent-sa-json-content-or-use-file()>"
+# sending to Akeyless. Easiest is the env var pattern shown above; if you
+# really want it in tfvars, paste the raw JSON as a heredoc string.
+# parent_sa_credentials = "<raw JSON content>"
 
 # ------------------------------------------------------------------
 # Roleset overrides (REQUIRED if any rolesets are discovered in Vault)

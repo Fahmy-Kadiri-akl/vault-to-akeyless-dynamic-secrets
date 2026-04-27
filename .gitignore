@@ -9,11 +9,11 @@
 .terraform/
 .terraform.lock.hcl
 
-# tfvars (real values) — keep examples
+# tfvars: real values stay out of git, examples are fine
 *.tfvars
 !*.tfvars.example
 
-# Cloud credentials material — keep examples only
+# Cloud credentials material: examples only
 parent-sa.json
 *.json
 !*.json.example

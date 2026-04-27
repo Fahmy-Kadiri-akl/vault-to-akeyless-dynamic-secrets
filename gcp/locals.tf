@@ -58,7 +58,7 @@ locals {
     }
   }
 
-  # roleset: no static SA email — operator supplies one via roleset_sa_overrides.
+  # roleset: no static SA email; operator supplies one via roleset_sa_overrides.
   roleset_entries = {
     for name, ds in data.vault_generic_secret.roleset :
     "roleset/${name}" => {

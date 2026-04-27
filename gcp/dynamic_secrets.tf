@@ -4,8 +4,9 @@
 #
 # Field choices:
 #   - access_type           = "sa"      (we're producing SA-bound credentials, not external/federation tokens)
-#   - service_account_type  = "fixed"   (we always reference an existing SA email — true 1:1 with Vault static & impersonated;
-#                                        rolesets need an operator-supplied durable SA, see locals.tf)
+#   - service_account_type  = "fixed"   (we always reference an existing SA email; this is a true 1:1 with Vault
+#                                        static and impersonated entries. Rolesets need an operator-supplied
+#                                        durable SA, see locals.tf.)
 #   - gcp_cred_type         = "token" or "key", from local.migration_map[*].cred_type
 #   - gcp_sa_email          = local.migration_map[*].sa_email
 #   - gcp_token_scopes      = comma-separated string per provider docs

@@ -1,0 +1,57 @@
+###############################################################################
+# Example tfvars for the GCP migration module.
+#
+# Copy to terraform.tfvars and fill in real values. terraform.tfvars is
+# gitignored; this *.tfvars.example file is the only one committed.
+#
+# vault_address and vault_token are easiest to supply via environment:
+#
+#   export TF_VAR_vault_address="$VAULT_ADDR"
+#   export TF_VAR_vault_token="$VAULT_TOKEN"
+#
+# in which case you do NOT set them here. Sensitive values (token, parent SA
+# JSON) should NEVER be committed.
+###############################################################################
+
+# ------------------------------------------------------------------
+# Vault
+# ------------------------------------------------------------------
+# vault_address = "https://vault.example.com"   # or set TF_VAR_vault_address
+# vault_token   = "hvs.xxxxx"                   # or set TF_VAR_vault_token (sensitive)
+vault_gcp_mount = "gcp"
+
+# ------------------------------------------------------------------
+# Akeyless
+# ------------------------------------------------------------------
+akeyless_access_id    = "p-xxxxxxxxxxxx"
+akeyless_gcp_audience = "akeyless.io"
+akeyless_api_url      = "https://api.akeyless.io"
+akeyless_path_prefix  = "/migrated-from-vault/gcp"
+akeyless_target_name  = "migrated-from-vault-gcp"
+
+# ------------------------------------------------------------------
+# Parent SA credentials
+# ------------------------------------------------------------------
+# Raw JSON content of the parent SA key. The module base64-encodes it before
+# sending to Akeyless. Two common patterns:
+#
+#   parent_sa_credentials = file("${path.module}/parent-sa.json")
+#
+# or paste the JSON inline (heredoc):
+#
+#   parent_sa_credentials = <<EOT
+#   {paste the parent SA key JSON content here}
+#   EOT
+#
+parent_sa_credentials = "<paste-parent-sa-json-content-or-use-file()>"
+
+# ------------------------------------------------------------------
+# Roleset overrides (REQUIRED if any rolesets are discovered in Vault)
+# ------------------------------------------------------------------
+# One pre-existing service-account email per Vault roleset. See
+# gcp/README.md "Rolesets" for the rationale and the bindings these SAs need.
+# The plan fails with a precondition error if a discovered roleset has no
+# entry here.
+roleset_sa_overrides = {
+  # "your-roleset-name" = "<roleset-sa-name>@<your-project>.iam.gserviceaccount.com"
+}

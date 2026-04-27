@@ -1,0 +1,28 @@
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform working directory + lockfile.
+# Decision: this repo is a customer-runtime migration tool, not a long-lived
+# service, so we gitignore the lockfile rather than commit it. Each operator
+# pins their own provider versions on first init.
+.terraform/
+.terraform.lock.hcl
+
+# tfvars (real values) — keep examples
+*.tfvars
+!*.tfvars.example
+
+# Cloud credentials material — keep examples only
+parent-sa.json
+*.json
+!*.json.example
+*.pem
+*.key
+
+# Local environment files
+.env
+
+# Terraform crash logs
+crash.log
+crash.*.log

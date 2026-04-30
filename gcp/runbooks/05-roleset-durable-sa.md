@@ -116,7 +116,8 @@ Example for a project-scoped role:
 ```bash
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:${SA_EMAIL}" \
-  --role   "roles/storage.objectViewer"
+  --role   "roles/storage.objectViewer" \
+  --condition=None
 ```
 
 ### Granting the parent SA permission to mint creds against this child

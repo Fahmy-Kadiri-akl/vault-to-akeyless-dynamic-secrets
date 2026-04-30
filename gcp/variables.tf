@@ -75,7 +75,7 @@ variable "roleset_sa_overrides" {
     Example:
       {
         "prod/app-1234-saas/my-roleset"     = "my-roleset@<project>.iam.gserviceaccount.com"
-        "prod/app-1234-saas-app/my-roleset" = "my-roleset@<project>.iam.gserviceaccount.com"
+        "prod/app-1234-saas/my-roleset-app" = "my-roleset@<project>.iam.gserviceaccount.com"
       }
 
     See gcp/runbooks/05-roleset-durable-sa.md for how to mint these durable SAs.

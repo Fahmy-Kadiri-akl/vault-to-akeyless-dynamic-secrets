@@ -85,22 +85,26 @@ gcloud iam service-accounts create "$SA_ID" \
 # child SA instead (see 05-roleset-durable-sa.md).
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:${SA_EMAIL}" \
-  --role   "roles/iam.serviceAccountTokenCreator"
+  --role   "roles/iam.serviceAccountTokenCreator" \
+  --condition=None
 
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:${SA_EMAIL}" \
-  --role   "roles/iam.serviceAccountKeyAdmin"
+  --role   "roles/iam.serviceAccountKeyAdmin" \
+  --condition=None
 
 # Add these two only if the same SA is also the Vault GCP config SA AND
 # any rolesets are in scope. See "Extra roles when the same SA is the
 # Vault GCP config SA and any rolesets exist" above.
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:${SA_EMAIL}" \
-  --role   "roles/iam.serviceAccountAdmin"
+  --role   "roles/iam.serviceAccountAdmin" \
+  --condition=None
 
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:${SA_EMAIL}" \
-  --role   "roles/resourcemanager.projectIamAdmin"
+  --role   "roles/resourcemanager.projectIamAdmin" \
+  --condition=None
 
 # Mint and download the JSON key. Keep this file out of git
 # (.gitignore already excludes parent-sa.json and *.json).

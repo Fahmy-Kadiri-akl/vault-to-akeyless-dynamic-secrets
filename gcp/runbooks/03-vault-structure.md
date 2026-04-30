@@ -165,6 +165,14 @@ vault write "${ENV}/${APP}/gcp/impersonated-account/run-deploy-app" \
 
 ### roleset
 
+> If `vault write <mount>/roleset/...` returns
+> `Permission 'iam.serviceAccounts.create' denied`, your Vault GCP
+> config SA needs the extra roles described in
+> [`06-parent-sa-and-target.md`](06-parent-sa-and-target.md) under
+> "Extra roles when the same SA is the Vault GCP config SA and any
+> rolesets exist". Mint the parent SA per 06 first, then return here
+> to populate rolesets.
+
 A roleset creates a fresh service account per lease and applies the
 configured IAM bindings to it. There is no static `service_account_email`
 on a roleset; the per-lease SA is ephemeral. The migration handles this

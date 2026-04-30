@@ -120,10 +120,13 @@ heuristic:
   port is wrong, or the gateway is not reachable from your Terraform
   host.
 
-`akeyless` CLI note: every `akeyless dynamic-secret ...` invocation in
-this repo needs `--gateway-url <gateway-host>` (just the hostname, with
-no `/v2` or `/api/v2` suffix), unless your CLI profile already targets
-the right gateway. Example:
+`akeyless` CLI note: `akeyless dynamic-secret list` and
+`akeyless dynamic-secret get` accept `--gateway-url <gateway-host>`
+(just the hostname, with no `/v2` or `/api/v2` suffix).
+`akeyless dynamic-secret get-value` does NOT accept `--gateway-url`; it
+resolves through your CLI profile (so make sure your profile points at
+the right gateway, or set the gateway via `akeyless configure`).
+Example:
 `akeyless dynamic-secret list --gateway-url https://gateway.example.com --json`.
 
 ### GCP-SA auth vs. other methods

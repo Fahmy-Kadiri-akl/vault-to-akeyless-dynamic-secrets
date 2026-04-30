@@ -44,9 +44,10 @@ Vault-side change followed by a Terraform re-run. No module changes.
 ### Verify
 
 The CLI has no server-side filter flag, so list and filter client-side
-with `jq` against `.producers[].name`. Pass `--gateway-url` (hostname
-only, no `/v2` or `/api/v2` suffix) on every `akeyless dynamic-secret`
-call unless your CLI profile already targets the right gateway:
+with `jq` against `.producers[].name`. `akeyless dynamic-secret list`
+and `akeyless dynamic-secret get` accept `--gateway-url` (hostname
+only, no `/v2` or `/api/v2` suffix); `akeyless dynamic-secret get-value`
+does not, so its profile must target the right gateway:
 
 ```bash
 akeyless dynamic-secret list --gateway-url https://gateway.example.com --json \
@@ -172,7 +173,7 @@ The parent SA's JSON key has a finite useful life. Rotate periodically.
    No dynamic secret resources change.
 
 3. After confirming new leases work (issue a value via
-   `akeyless dynamic-secret get-value --gateway-url https://gateway.example.com --name <path>`),
+   `akeyless dynamic-secret get-value --name <path>`),
    delete the old key:
 
    ```bash

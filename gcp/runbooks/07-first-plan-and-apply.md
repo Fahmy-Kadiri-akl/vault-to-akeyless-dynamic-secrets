@@ -102,12 +102,15 @@ Vault change.
 
 ## Verify with the akeyless CLI
 
-Every `akeyless dynamic-secret ...` invocation in this section needs
+`akeyless dynamic-secret list` and `akeyless dynamic-secret get` accept
 `--gateway-url <gateway-host>` (just the hostname; no `/v2` or `/api/v2`
-suffix), unless your CLI profile already targets the right gateway. The
-default endpoint is `http://localhost:8000`, so without the flag the
-calls fail with `connection refused`. The examples below use
-`https://gateway.example.com` as the placeholder; substitute your own.
+suffix). The default endpoint is `http://localhost:8000`, so without the
+flag those calls fail with `connection refused`.
+`akeyless dynamic-secret get-value` does NOT accept `--gateway-url`; it
+resolves through your CLI profile, so make sure your profile points at
+the right gateway (or set it via `akeyless configure`). The examples
+below use `https://gateway.example.com` as the placeholder; substitute
+your own.
 
 ### Check the target
 
@@ -130,10 +133,21 @@ akeyless target get-details --name migrated-from-vault-gcp \
   | jq '{ type: .target.target_type, gcp: .value.gcp_target_details }'
 ```
 
-Expected: `type` is `gcp` and `gcp` is an object whose
-`service_account_email` (or equivalent field) matches your parent SA.
-Note that `target_type` lives at `.target.target_type`, not under
-`.value`, and the GCP fields are nested under `.value.gcp_target_details`.
+Expected: `type` is `gcp` and `gcp` is an object. Note that
+`target_type` lives at `.target.target_type`, not under `.value`, and
+the GCP fields are nested under `.value.gcp_target_details`. That
+object exposes `gcp_service_account_key` (the parent SA's full key
+JSON, as a string) and `gcp_service_account_key_base64`. There is no
+flat `service_account_email`; assert the email by parsing the embedded
+key JSON:
+
+```bash
+akeyless target get-details --name '<target>' --json \
+  | jq -r '.value.gcp_target_details.gcp_service_account_key | fromjson | .client_email'
+```
+
+Expected output: the parent SA email you minted in
+[`06-parent-sa-and-target.md`](06-parent-sa-and-target.md).
 
 ### Check the dynamic secrets
 
@@ -167,10 +181,10 @@ Fetch both runtime variants and compare. They are independent dynamic
 secrets that happen to share a logical name.
 
 ```bash
-akeyless dynamic-secret get-value --gateway-url https://gateway.example.com \
+akeyless dynamic-secret get-value \
   --name '/prod/app-1234-saas/gcp/rolesets/dyn-secret1'
 
-akeyless dynamic-secret get-value --gateway-url https://gateway.example.com \
+akeyless dynamic-secret get-value \
   --name '/prod/app-1234-saas/gcp/rolesets/dyn-secret1-app'
 ```
 
@@ -178,18 +192,25 @@ Expected (one response per call):
 
 ```json
 {
-  "access_token": "ya29.c.XXXXXXXX...",
-  "expires_at": 1735689600,
-  "token_type": "Bearer"
+  "expire_time": "2026-04-30T21:25:58Z",
+  "id": "tmp.p-xxxxxxxxxxx",
+  "token": "ya29.c.XXXX...",
+  "ttl_in_minutes": "60"
 }
 ```
 
+The `token` field carries the OAuth access token (the schema does not
+use the field name from Google's IAM Credentials API). `expire_time` is
+an ISO-8601 timestamp, not epoch seconds. `ttl_in_minutes` mirrors the
+gateway-side TTL. There is no `token_type` in the payload; treat the
+token as a Bearer token.
+
 If the two runtime variants point at the same durable SA in
-`var.roleset_sa_overrides`, the two access tokens will represent the
-same Google identity but be issued separately (different `access_token`
-strings, same SA email under the hood). If they point at different SAs,
-the tokens belong to different identities. Confirm by decoding each
-token via `gcloud auth application-default print-access-token` style
+`var.roleset_sa_overrides`, the two tokens will represent the same
+Google identity but be issued separately (different `token` strings,
+same SA email under the hood). If they point at different SAs, the
+tokens belong to different identities. Confirm by decoding each token
+via `gcloud auth application-default print-access-token` style
 introspection or by calling `tokeninfo`.
 
 ### Get a value (key mode)
@@ -197,7 +218,7 @@ introspection or by calling `tokeninfo`.
 For a static account whose Vault `secret_type` is `service_account_key`:
 
 ```bash
-akeyless dynamic-secret get-value --gateway-url https://gateway.example.com \
+akeyless dynamic-secret get-value \
   --name '/prod/app-1234-saas/gcp/rolesets/db-static-key'
 ```
 
@@ -205,11 +226,16 @@ Expected:
 
 ```json
 {
-  "private_key_data": "<base64 of the JSON key>",
-  "private_key_id": "...",
-  "service_account_email": "db-app@<project>.iam.gserviceaccount.com"
+  "encoded_key": "ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCi4uLi4=",
+  "id": "tmp.p-xxxxxxxxxxx",
+  "ttl_in_minutes": "60"
 }
 ```
+
+The SA email and key id are not flat fields on this payload. Decode the
+SA-key JSON with `echo '<encoded_key>' | base64 -d`; the result is the
+standard Google service-account-key JSON containing `client_email`,
+`private_key_id`, `private_key`, etc.
 
 ### Side-by-side compare with Vault
 
@@ -222,12 +248,13 @@ vault read prod/app-1234-saas/gcp/static-account/db-static
 # Akeyless
 akeyless dynamic-secret get --gateway-url https://gateway.example.com \
   --name '/prod/app-1234-saas/gcp/rolesets/db-static' \
-  | jq '.value | { gcp_service_account_email, gcp_cred_type, gcp_token_scopes }'
+  | jq '{ gcp_service_account_email, gcp_token_type, gcp_token_scope }'
 ```
 
-Expected: the SA email matches Vault's `service_account_email`, the cred
-type maps `service_account_key` to `key` and `access_token` to `token`,
-and the scopes match the Vault `token_scopes` list.
+Expected: the SA email matches Vault's `service_account_email`, the
+`gcp_token_type` maps the Vault `secret_type` (`service_account_key`
+to `key`, otherwise `token`), and `gcp_token_scope` (singular) matches
+the Vault `token_scopes` list.
 
 ### Inspect the migration summary output
 

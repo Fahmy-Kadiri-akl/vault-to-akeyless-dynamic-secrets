@@ -7,9 +7,12 @@ output "migration_summary" {
   sensitive = true
   value = [
     for k, v in local.migration_map : {
+      env           = v.env
+      app           = v.app
+      vault_mount   = v.vault_mount
       vault_type    = v.vault_type
       vault_name    = v.vault_name
-      akeyless_path = "${var.akeyless_path_prefix}/${k}"
+      akeyless_path = v.akeyless_name
       gcp_sa_email  = v.sa_email
       cred_type     = v.cred_type
       mode          = v.mode
@@ -18,7 +21,7 @@ output "migration_summary" {
 }
 
 output "rolesets_missing_override" {
-  description = "Vault roleset names discovered in the mount but missing an entry in var.roleset_sa_overrides. Empty after a successful apply."
+  description = "Roleset paths discovered in Vault but missing an entry in var.roleset_sa_overrides. Each element is keyed `<env>/<app>/<roleset_name>`. Empty after a successful apply."
   value       = local.rolesets_missing_override
 }
 

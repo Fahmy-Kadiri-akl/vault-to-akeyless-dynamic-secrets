@@ -1,6 +1,8 @@
 # vault-to-akeyless-dynamic-secrets
 
-Read your dynamic secret config out of HashiCorp Vault, create the matching objects in Akeyless. Pure Terraform: the `vault` provider does the reading, the `akeyless` provider does the writing.
+Read your dynamic secret config out of HashiCorp Vault, create the
+matching objects in Akeyless. Pure Terraform: the `vault` and `http`
+providers do the reading, the `akeyless` provider does the writing.
 
 ## Architecture
 
@@ -11,83 +13,85 @@ config:
   theme: neutral
 ---
 flowchart LR
-  V[("HashiCorp Vault")] -->|list + read| TF["Terraform"]
-  TF -->|create| AK[("Akeyless")]
-  Op(["Operator"]) -.->|plan + apply| TF
+  subgraph V["HashiCorp Vault"]
+    SM["sys/mounts"]
+    M1["env/app-1/gcp/"]
+    M2["env/app-1-app/gcp/"]
+    M3["env/app-2/gcp/"]
+  end
+  TF["Terraform<br/>(per-mount discovery)"]
+  subgraph AK["Akeyless"]
+    T["target: migrated-from-vault-gcp"]
+    DS["env/app-*/gcp/rolesets/*"]
+  end
+  V -->|"GET sys/mounts<br/>+ per-mount LIST"| TF
+  TF --> T
+  TF --> DS
 ```
 
-Vault is the source of truth you already have. On every run, Terraform enumerates the dynamic secret config there, copies the identity bits it needs, and creates one Akeyless target plus one Akeyless dynamic secret per Vault entity. The parent service account credential that Akeyless will use to mint per-lease values is something you hand in as a sensitive Terraform variable.
+Discovery is live. Every plan re-reads `sys/mounts`, filters to mounts
+of `type=gcp`, and walks each mount for `static-account`,
+`impersonated-account`, and `roleset` entries. There is no
+operator-maintained inventory; adding or removing a Vault mount adds
+or removes the corresponding Akeyless dynamic secrets on the next
+`terraform apply`.
 
-Discovery is live. The Terraform talks to Vault on every plan via the Vault HTTP API (`?list=true`), so there is nothing for you to keep in sync. An empty Vault path returns 404 and is silently treated as "nothing of that kind to migrate."
+## Naming
 
-## Mapping
+Every migrated dynamic secret is named:
 
-| Vault entity                              | Akeyless object                                              | Notes                                                                                                |
-|-------------------------------------------|--------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
-| `gcp/static-account/<name>`               | `akeyless_dynamic_secret_gcp` (fixed SA, token or key)       | `gcp_sa_email` is copied from Vault. `gcp_cred_type` is derived from Vault's `secret_type`.          |
-| `gcp/impersonated-account/<name>`         | `akeyless_dynamic_secret_gcp` (fixed SA, access token)       | `gcp_sa_email` is copied from Vault. Always `gcp_cred_type = "token"`.                               |
-| `gcp/roleset/<name>`                      | `akeyless_dynamic_secret_gcp` (override required)            | Vault rolesets mint a fresh SA per lease, so there is no static email to copy. You give one durable SA email per roleset via `var.roleset_sa_overrides`. |
-| Parent SA JSON for the Akeyless target    | `akeyless_target_gcp.gcp_key` (base64-encoded)               | Passed as a sensitive tfvar. The Terraform base64-encodes it for you.                                |
+```
+<env>/<app>/gcp/rolesets/<entity_name>
+```
 
-### Why rolesets need an override
+`<env>` and `<app>` come from the first two segments of the Vault mount
+path (`<env>/<app>/gcp/`). All three Vault entity types collapse into
+the same Akeyless folder.
 
-A Vault roleset creates a brand new Google service account on every lease and tears it down on revoke, so the email is ephemeral. Akeyless dynamic secrets need a long-lived email up front. The migration handles this by asking you to pre-create one durable SA per roleset (with bindings equivalent to what the roleset granted) and to pass its email in via `var.roleset_sa_overrides`. If a roleset is found in Vault and you have not supplied an override for it, plan fails with a clear error that names the missing entries so you can fill them in and retry.
+| Vault entity                       | Akeyless dynamic secret                              | `gcp_cred_type`                                                    |
+|------------------------------------|------------------------------------------------------|--------------------------------------------------------------------|
+| `gcp/static-account/<name>`        | `<env>/<app>/gcp/rolesets/<name>`                    | `key` if Vault `secret_type=service_account_key`, else `token`.    |
+| `gcp/impersonated-account/<name>`  | `<env>/<app>/gcp/rolesets/<name>`                    | Always `token`.                                                    |
+| `gcp/roleset/<name>`               | `<env>/<app>/gcp/rolesets/<name>`                    | Always `token`. SA email comes from `var.roleset_sa_overrides`.    |
+| Parent SA JSON                     | `akeyless_target_gcp.migrated_from_vault.gcp_key`    | Single shared target (default `migrated-from-vault-gcp`).          |
+
+Vault rolesets create a fresh service account per lease, so there is no
+static email on the Vault side. The operator pre-creates one durable SA
+per `(env, app, roleset)` tuple and supplies the email via
+`var.roleset_sa_overrides`. See
+[`gcp/runbooks/05-roleset-durable-sa.md`](gcp/runbooks/05-roleset-durable-sa.md).
 
 ## Project structure
 
 ```
 vault-to-akeyless-dynamic-secrets/
-├── README.md
-├── .gitignore
-├── gcp/                          # ready
-│   ├── README.md
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── data.tf
-│   ├── locals.tf
-│   ├── target.tf
-│   ├── dynamic_secrets.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars.example
-├── aws/                          # coming soon
-│   └── README.md
-└── azure/                        # coming soon
-    └── README.md
+|-- README.md                           # this file
+|-- .gitignore
+|-- gcp/                                # ready
+|   |-- README.md                       # short index, links into runbooks/
+|   |-- main.tf
+|   |-- variables.tf
+|   |-- data.tf
+|   |-- locals.tf
+|   |-- target.tf
+|   |-- dynamic_secrets.tf
+|   |-- outputs.tf
+|   |-- terraform.tfvars.example
+|   `-- runbooks/                       # deep-dive runbook, 9 files
+|-- aws/                                # coming soon
+|   `-- README.md
+`-- azure/                              # coming soon
+    `-- README.md
 ```
 
-## Prereqs
-
-- Terraform 1.5 or newer.
-- Vault access:
-  - Server URL via `var.vault_address`, or `export TF_VAR_vault_address="$VAULT_ADDR"`.
-  - Token with `read` plus `list` on `<mount>/static-account`, `<mount>/impersonated-account`, `<mount>/roleset` and the per-entity paths, via `var.vault_token` or `export TF_VAR_vault_token="$VAULT_TOKEN"`.
-- Akeyless access:
-  - An access ID that can create targets and dynamic secrets under the path prefix you pick.
-  - Your gateway's V2 SDK URL (e.g. `https://gateway.example.com:8081/v2`). The provider must point at *your* gateway, not `https://api.akeyless.io`; the public API does not expose `dynamic-secret-create-gcp`.
-  - The default login block uses the GCP-SA auth method. If you are not running on a GCE host bound to your gateway's access ID, swap the block in `gcp/main.tf` for `api_key_login` or another supported method.
-- The parent SA JSON for the Akeyless GCP target. The gcloud command and the IAM roles it needs are in `gcp/README.md`.
-
-## Quickstart (GCP)
-
-```bash
-cd gcp/
-cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars: set akeyless_access_id, akeyless_gateway_url, paths
-export TF_VAR_vault_address="$VAULT_ADDR"
-export TF_VAR_vault_token="$VAULT_TOKEN"
-export TF_VAR_parent_sa_credentials="$(cat ./parent-sa.json)"
-terraform init
-terraform plan
-# review the planned akeyless_target_gcp + akeyless_dynamic_secret_gcp resources
-terraform apply
-```
-
-If any roleset is missing an override, plan fails before it does anything. The error message names the rolesets you need to add to `var.roleset_sa_overrides`.
+The full deep-dive lives under [`gcp/runbooks/`](gcp/runbooks/).
+[`gcp/README.md`](gcp/README.md) is the short index with the variable
+table and a one-line quick-run.
 
 ## Status
 
-| Module  | Vault mount | Status      | Notes                                                                                |
-|---------|-------------|-------------|--------------------------------------------------------------------------------------|
-| `gcp/`  | `gcp/`      | Ready       | static-account, impersonated-account, roleset (with operator-supplied SA overrides). |
-| `aws/`  | `aws/`      | Coming soon | Will follow the GCP pattern for IAM users, assumed roles, and federation tokens.     |
-| `azure/`| `azure/`    | Coming soon | Will follow the GCP pattern for Azure service principal rolesets.                    |
+| Module  | Vault mount layout              | Status      | Notes                                                                                |
+|---------|---------------------------------|-------------|--------------------------------------------------------------------------------------|
+| `gcp/`  | `<env>/<app>/gcp/`              | Ready       | static-account, impersonated-account, roleset (with operator-supplied SA overrides). |
+| `aws/`  | `<env>/<app>/aws/`              | Coming soon | Will follow the GCP pattern for IAM users, assumed roles, and federation tokens.     |
+| `azure/`| `<env>/<app>/azure/`            | Coming soon | Will follow the GCP pattern for Azure service principal rolesets.                    |

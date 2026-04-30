@@ -20,7 +20,6 @@
 # ------------------------------------------------------------------
 # vault_address = "https://vault.example.com"   # or set TF_VAR_vault_address
 # vault_token   = "hvs.xxxxx"                   # or set TF_VAR_vault_token (sensitive)
-vault_gcp_mount = "gcp"
 
 # ------------------------------------------------------------------
 # Akeyless
@@ -35,7 +34,6 @@ akeyless_gcp_audience = "akeyless.io"
 #   http://127.0.0.1:8081/v2
 akeyless_gateway_url = "https://your-gateway.example.com:8081/v2"
 
-akeyless_path_prefix = "/migrated-from-vault/gcp"
 akeyless_target_name = "migrated-from-vault-gcp"
 
 # ------------------------------------------------------------------
@@ -49,10 +47,12 @@ akeyless_target_name = "migrated-from-vault-gcp"
 # ------------------------------------------------------------------
 # Roleset overrides (REQUIRED if any rolesets are discovered in Vault)
 # ------------------------------------------------------------------
-# One pre-existing service-account email per Vault roleset. See
-# gcp/README.md "Rolesets" for the rationale and the bindings these SAs need.
-# The plan fails with a precondition error if a discovered roleset has no
-# entry here.
+# One pre-existing service-account email per Vault roleset. Keys are
+# `<env>/<app>/<roleset_name>` because roleset names can collide across apps.
+# See gcp/runbooks/05-roleset-durable-sa.md for the rationale and the bindings
+# these SAs need. The plan fails with a precondition error if a discovered
+# roleset has no entry here.
 roleset_sa_overrides = {
-  # "your-roleset-name" = "<roleset-sa-name>@<your-project>.iam.gserviceaccount.com"
+  # "prod/app-1234-saas/my-roleset"     = "my-roleset@<project>.iam.gserviceaccount.com"
+  # "prod/app-1234-saas-app/my-roleset" = "my-roleset@<project>.iam.gserviceaccount.com"
 }

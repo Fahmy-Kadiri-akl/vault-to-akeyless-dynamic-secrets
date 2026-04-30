@@ -16,13 +16,14 @@ flowchart LR
   subgraph V["HashiCorp Vault"]
     SM["sys/mounts"]
     M1["env/app-1/gcp/"]
-    M2["env/app-1-app/gcp/"]
-    M3["env/app-2/gcp/"]
+    M2["env/app-2/gcp/"]
+    E1["entities:<br/>name + name-app<br/>(per logical secret)"]
+    M1 --> E1
   end
   TF["Terraform<br/>(per-mount discovery)"]
   subgraph AK["Akeyless"]
     T["target: migrated-from-vault-gcp"]
-    DS["env/app-*/gcp/rolesets/*"]
+    DS["env/app-*/gcp/rolesets/*<br/>(includes -app variants)"]
   end
   V -->|"GET sys/mounts<br/>+ per-mount LIST"| TF
   TF --> T
@@ -47,6 +48,13 @@ Every migrated dynamic secret is named:
 `<env>` and `<app>` come from the first two segments of the Vault mount
 path (`<env>/<app>/gcp/`). All three Vault entity types collapse into
 the same Akeyless folder.
+
+Each app has one Vault GCP mount. The Kubernetes vs non-Kubernetes
+split lives at the entity level: by convention, `<entity_name>` is the
+non-Kubernetes variant and `<entity_name>-app` is the Kubernetes
+variant, both under the same `<env>/<app>/gcp/` mount. The migration
+mirrors each entity to its own Akeyless dynamic secret, so a logical
+secret with both runtime variants produces two dynamic secrets.
 
 | Vault entity                       | Akeyless dynamic secret                              | `gcp_cred_type`                                                    |
 |------------------------------------|------------------------------------------------------|--------------------------------------------------------------------|

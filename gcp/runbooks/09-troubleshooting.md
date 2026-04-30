@@ -95,7 +95,7 @@ Fix:
    ```hcl
    roleset_sa_overrides = {
      "prod/app-1234-saas/dyn-secret1"     = "dyn-secret1@<project>.iam.gserviceaccount.com"
-     "prod/app-1234-saas-app/dyn-secret1" = "dyn-secret1@<project>.iam.gserviceaccount.com"
+     "prod/app-1234-saas/dyn-secret1-app" = "dyn-secret1-app@<project>.iam.gserviceaccount.com"
    }
    ```
 

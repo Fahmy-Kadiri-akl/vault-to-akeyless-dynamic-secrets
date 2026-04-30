@@ -29,9 +29,11 @@ flowchart LR
   subgraph V["HashiCorp Vault"]
     SM["sys/mounts"]
     M1["prod/app-1234-saas/gcp/"]
-    M2["prod/app-1234-saas-app/gcp/"]
+    E1["roleset/dyn-secret1"]
+    E2["roleset/dyn-secret1-app"]
     SM -. lists .-> M1
-    SM -. lists .-> M2
+    M1 --> E1
+    M1 --> E2
   end
 
   subgraph TF["Terraform (gcp/ module)"]
@@ -46,7 +48,7 @@ flowchart LR
   subgraph AK["Akeyless"]
     T["target: migrated-from-vault-gcp"]
     P1["prod/app-1234-saas/gcp/rolesets/dyn-secret1"]
-    P2["prod/app-1234-saas-app/gcp/rolesets/dyn-secret1"]
+    P2["prod/app-1234-saas/gcp/rolesets/dyn-secret1-app"]
   end
 
   V --> DISC
@@ -72,25 +74,23 @@ path and the entity name:
 `<env>` and `<app>` come from segments 1 and 2 of the Vault mount path.
 `<entity_name>` is the literal LIST result key from Vault.
 
-Worked example for a non-Kubernetes app:
+Each application has exactly one GCP mount: `<env>/<app>/gcp/`. The
+Kubernetes vs non-Kubernetes split is at the entity level inside that
+single mount. The convention is to use an `-app` suffix on the entity
+name for the Kubernetes variant of a logical secret. Both entities live
+under the same mount:
 
 ```
 Vault mount:     prod/app-1234-saas/gcp/
-Vault entity:    prod/app-1234-saas/gcp/roleset/dyn-secret1
+Vault entity:    prod/app-1234-saas/gcp/roleset/dyn-secret1       (non-Kubernetes)
+Vault entity:    prod/app-1234-saas/gcp/roleset/dyn-secret1-app   (Kubernetes)
 Akeyless DS:     prod/app-1234-saas/gcp/rolesets/dyn-secret1
+Akeyless DS:     prod/app-1234-saas/gcp/rolesets/dyn-secret1-app
 ```
 
-The Kubernetes mirror, by convention, uses an `-app` suffix on the app
-segment:
-
-```
-Vault mount:     prod/app-1234-saas-app/gcp/
-Vault entity:    prod/app-1234-saas-app/gcp/roleset/dyn-secret1
-Akeyless DS:     prod/app-1234-saas-app/gcp/rolesets/dyn-secret1
-```
-
-The tool does not synthesize the second mount. The operator creates both
-mounts themselves; see [`03-vault-structure.md`](03-vault-structure.md).
+The tool does not synthesize the `-app` variant. The operator creates
+both entities directly in Vault; see
+[`03-vault-structure.md`](03-vault-structure.md).
 
 ## All three Vault types collapse into `gcp/rolesets/`
 

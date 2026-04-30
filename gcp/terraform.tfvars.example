@@ -49,10 +49,12 @@ akeyless_target_name = "migrated-from-vault-gcp"
 # ------------------------------------------------------------------
 # One pre-existing service-account email per Vault roleset. Keys are
 # `<env>/<app>/<roleset_name>` because roleset names can collide across apps.
-# See gcp/runbooks/05-roleset-durable-sa.md for the rationale and the bindings
+# The `<roleset_name>` is the literal Vault entity name and may itself end in
+# `-app` for the Kubernetes runtime variant of a logical secret. See
+# gcp/runbooks/05-roleset-durable-sa.md for the rationale and the bindings
 # these SAs need. The plan fails with a precondition error if a discovered
 # roleset has no entry here.
 roleset_sa_overrides = {
-  # "prod/app-1234-saas/my-roleset"     = "my-roleset@<project>.iam.gserviceaccount.com"
-  # "prod/app-1234-saas-app/my-roleset" = "my-roleset@<project>.iam.gserviceaccount.com"
+  # "prod/app-1234-saas/dyn-secret1"     = "dyn-secret1@<project>.iam.gserviceaccount.com"
+  # "prod/app-1234-saas/dyn-secret1-app" = "dyn-secret1-app@<project>.iam.gserviceaccount.com"
 }

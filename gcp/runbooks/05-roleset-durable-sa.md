@@ -15,30 +15,47 @@ needs a pre-created durable SA, how to mint one, and how to wire it into
 The migration provisions Akeyless dynamic secrets in fixed-SA mode
 (`access_type = "sa"`, `service_account_type = "fixed"`). That mode needs
 an existing email up front. To migrate a roleset cleanly the operator
-pre-creates one durable Google service account per `(env, app, roleset)`
-tuple, applies the same IAM bindings the roleset would have applied to
-its ephemeral SAs, then maps the email through
-`var.roleset_sa_overrides`.
+pre-creates one durable Google service account per
+`(env, app, roleset_name)` tuple, applies the same IAM bindings the
+roleset would have applied to its ephemeral SAs, then maps the email
+through `var.roleset_sa_overrides`. The `roleset_name` is the literal
+Vault entity name and may itself end in `-app` for the Kubernetes
+variant.
 
 ## Override map shape
 
 Keys are `<env>/<app>/<roleset_name>`. The env and app prefix is required
 because roleset names commonly collide across apps (`my-roleset` exists
-in many mounts).
+in many mounts). Bare and `-app` rolesets are independent keys:
 
 ```hcl
 roleset_sa_overrides = {
   "prod/app-1234-saas/dyn-secret1"     = "dyn-secret1@<project>.iam.gserviceaccount.com"
-  "prod/app-1234-saas-app/dyn-secret1" = "dyn-secret1@<project>.iam.gserviceaccount.com"
+  "prod/app-1234-saas/dyn-secret1-app" = "dyn-secret1-app@<project>.iam.gserviceaccount.com"
 }
 ```
+
+The example above gives each runtime variant its own durable SA. If the
+two variants can share the same underlying SA (same IAM bindings, same
+project), point both keys at the same email:
+
+```hcl
+roleset_sa_overrides = {
+  "prod/app-1234-saas/dyn-secret1"     = "dyn-secret1@<project>.iam.gserviceaccount.com"
+  "prod/app-1234-saas/dyn-secret1-app" = "dyn-secret1@<project>.iam.gserviceaccount.com"
+}
+```
+
+Both styles satisfy the precondition. The choice is policy: separate SAs
+give per-runtime audit trails and let bindings drift apart over time;
+shared SAs save IAM objects but couple the two runtimes.
 
 If a discovered roleset has no entry, `terraform plan` fails at the
 precondition with the offending keys named.
 
 ## Minting one durable SA
 
-For a roleset `dyn-secret1` under `prod/app-1234-saas/gcp/`:
+For the bare `dyn-secret1` roleset under `prod/app-1234-saas/gcp/`:
 
 ```bash
 PROJECT=<your-project>
@@ -54,6 +71,21 @@ gcloud iam service-accounts create "$SA_ID" \
   --project "$PROJECT" \
   --display-name "Akeyless DS for ${ENV}/${APP}/${ROLESET}"
 ```
+
+If the operator wants per-runtime SAs, repeat for the `-app` variant:
+
+```bash
+ROLESET=dyn-secret1-app
+SA_ID="${ROLESET}"
+SA_EMAIL="${SA_ID}@${PROJECT}.iam.gserviceaccount.com"
+
+gcloud iam service-accounts create "$SA_ID" \
+  --project "$PROJECT" \
+  --display-name "Akeyless DS for ${ENV}/${APP}/${ROLESET}"
+```
+
+To share one SA between both runtime variants, skip the second create
+and reuse the first SA's email in both override-map rows.
 
 `gcloud iam service-accounts create` is idempotent only on the
 "already exists" error code; if you re-run it, it will fail rather than
@@ -139,8 +171,9 @@ After you mint and bind every durable SA, paste the map into your
 ```hcl
 roleset_sa_overrides = {
   "prod/app-1234-saas/dyn-secret1"     = "dyn-secret1@<project>.iam.gserviceaccount.com"
-  "prod/app-1234-saas-app/dyn-secret1" = "dyn-secret1@<project>.iam.gserviceaccount.com"
-  # ... one entry per (env, app, roleset) tuple ...
+  "prod/app-1234-saas/dyn-secret1-app" = "dyn-secret1-app@<project>.iam.gserviceaccount.com"
+  # ... one entry per (env, app, roleset_name) tuple ...
+  # roleset_name may itself end in "-app" for the Kubernetes variant.
 }
 ```
 

@@ -9,8 +9,8 @@ SA.
 The migration discovers Vault mounts on every plan, so a new app is a
 Vault-side change followed by a Terraform re-run. No module changes.
 
-1. Mount both halves of the new app in Vault, using the parent SA's
-   JSON for `config`:
+1. Mount the new app in Vault, using the parent SA's JSON for `config`.
+   One mount per app:
 
    ```bash
    ENV=prod
@@ -19,16 +19,16 @@ Vault-side change followed by a Terraform re-run. No module changes.
 
    vault secrets enable -path="${ENV}/${APP}/gcp" gcp
    vault write "${ENV}/${APP}/gcp/config" credentials=@"${PARENT_SA_KEY}"
-
-   vault secrets enable -path="${ENV}/${APP}-app/gcp" gcp
-   vault write "${ENV}/${APP}-app/gcp/config" credentials=@"${PARENT_SA_KEY}"
    ```
 
-2. Populate each mount with static-account, impersonated-account, and
+2. Populate the mount with static-account, impersonated-account, and
    roleset entries as needed (see
-   [`03-vault-structure.md`](03-vault-structure.md)).
-3. For every roleset, mint a durable SA and add an entry to
-   `var.roleset_sa_overrides` keyed `<env>/<app>/<roleset_name>` (see
+   [`03-vault-structure.md`](03-vault-structure.md)). For each logical
+   secret, create both the bare entity and the `-app` variant under the
+   same mount if the app has a Kubernetes runtime.
+3. For every roleset (each entity name, including `-app` variants),
+   mint a durable SA and add an entry to `var.roleset_sa_overrides`
+   keyed `<env>/<app>/<roleset_name>` (see
    [`05-roleset-durable-sa.md`](05-roleset-durable-sa.md)).
 4. Re-run:
 
@@ -51,12 +51,27 @@ akeyless dynamic-secret list --filter "/prod/${APP}/" \
 Expected: one path per Vault entity in the new app, all under
 `<env>/<app>/gcp/rolesets/`.
 
-## Adding a new roleset to an existing app
+## Adding a new logical secret to an existing app
 
-1. Create the roleset in Vault:
+For a logical secret that needs both runtime variants, create the bare
+entity and the `-app` entity in the same existing mount.
+
+1. Create both roleset entities in Vault:
 
    ```bash
+   # Non-Kubernetes variant.
    vault write "${ENV}/${APP}/gcp/roleset/another-roleset" \
+     project="${PROJECT}" \
+     secret_type="access_token" \
+     token_scopes="https://www.googleapis.com/auth/cloud-platform" \
+     bindings=-<<EOF
+   resource "//cloudresourcemanager.googleapis.com/projects/${PROJECT}" {
+     roles = ["roles/storage.objectViewer"]
+   }
+   EOF
+
+   # Kubernetes variant (same mount, "-app" entity-name suffix).
+   vault write "${ENV}/${APP}/gcp/roleset/another-roleset-app" \
      project="${PROJECT}" \
      secret_type="access_token" \
      token_scopes="https://www.googleapis.com/auth/cloud-platform" \
@@ -67,18 +82,26 @@ Expected: one path per Vault entity in the new app, all under
    EOF
    ```
 
-2. Mint the durable SA and replicate the bindings (see
-   [`05-roleset-durable-sa.md`](05-roleset-durable-sa.md)).
-3. Add the entry to `var.roleset_sa_overrides`:
+2. Mint a durable SA per roleset entity and replicate the bindings (see
+   [`05-roleset-durable-sa.md`](05-roleset-durable-sa.md)). The two
+   variants can share one SA or carry their own.
+3. Add the entries to `var.roleset_sa_overrides`. The Vault entity name
+   is the `<roleset_name>` segment of the key:
 
    ```hcl
    roleset_sa_overrides = {
      # ... existing entries ...
-     "prod/app-1234-saas/another-roleset" = "another-roleset@<project>.iam.gserviceaccount.com"
+     "prod/app-1234-saas/another-roleset"     = "another-roleset@<project>.iam.gserviceaccount.com"
+     "prod/app-1234-saas/another-roleset-app" = "another-roleset-app@<project>.iam.gserviceaccount.com"
    }
    ```
 
 4. `terraform plan && terraform apply`.
+
+For static-account and impersonated-account secrets, the same shape
+applies: create both `<name>` and `<name>-app` entities under the
+existing mount. Those types do not need `roleset_sa_overrides` entries;
+their SA email comes from the Vault entity itself.
 
 ## Removing a migrated entity
 
@@ -106,16 +129,16 @@ gcloud iam service-accounts delete \
 
 To migrate an app off the platform:
 
-1. Disable both Vault mounts:
+1. Disable the app's Vault mount:
 
    ```bash
    vault secrets disable "${ENV}/${APP}/gcp"
-   vault secrets disable "${ENV}/${APP}-app/gcp"
    ```
 
-2. Remove the app's keys from `var.roleset_sa_overrides`.
-3. `terraform plan` should show one destroy per dynamic secret across
-   both mounts. Apply.
+2. Remove every `<env>/<app>/...` entry from `var.roleset_sa_overrides`,
+   including any `-app` runtime variants.
+3. `terraform plan` should show one destroy per dynamic secret that
+   lived under the mount, across both runtime variants. Apply.
 4. (Optional) Delete the per-roleset durable SAs in GCP.
 
 The shared `akeyless_target_gcp` stays; it is still used by other apps.

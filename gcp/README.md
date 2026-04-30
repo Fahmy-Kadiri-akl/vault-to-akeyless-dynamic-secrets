@@ -10,13 +10,18 @@ collapse into the same Akeyless folder:
 <env>/<app>/gcp/rolesets/<entity_name>
 ```
 
+Each app has one mount. The Kubernetes vs non-Kubernetes split is at
+the entity level inside that mount: by convention, `<entity_name>` is
+the non-Kubernetes variant and `<entity_name>-app` is the Kubernetes
+variant. Both live under the same `<env>/<app>/gcp/` mount.
+
 For the deep-dive, read the runbooks in order:
 
 | File | Covers |
 |---|---|
 | [`runbooks/01-architecture-overview.md`](runbooks/01-architecture-overview.md) | Components, data flow, naming convention, the rolesets-collapse table. |
 | [`runbooks/02-prerequisites.md`](runbooks/02-prerequisites.md) | Vault token policy, Akeyless access ID, gateway URL, parent SA, local tools. |
-| [`runbooks/03-vault-structure.md`](runbooks/03-vault-structure.md) | The two-mount-per-app rule, `vault secrets enable`, `vault write` for each kind. |
+| [`runbooks/03-vault-structure.md`](runbooks/03-vault-structure.md) | The one-mount-per-app rule, entity-level `-app` runtime split, `vault secrets enable`, `vault write` for each kind. |
 | [`runbooks/04-discovery-walkthrough.md`](runbooks/04-discovery-walkthrough.md) | Every HTTP call the module makes, in raw `curl` form, for out-of-band verification. |
 | [`runbooks/05-roleset-durable-sa.md`](runbooks/05-roleset-durable-sa.md) | Why rolesets need a durable pre-created SA; minting and binding it; wiring `var.roleset_sa_overrides`. |
 | [`runbooks/06-parent-sa-and-target.md`](runbooks/06-parent-sa-and-target.md) | Parent SA, IAM roles, JSON key handling, the single shared Akeyless target. |

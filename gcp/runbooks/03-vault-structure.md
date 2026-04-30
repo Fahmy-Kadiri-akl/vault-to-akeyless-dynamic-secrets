@@ -1,34 +1,43 @@
 # Vault Structure
 
-This runbook covers the Vault-side layout the migration expects: two GCP
-mounts per application (one for non-Kubernetes workloads, one for
-Kubernetes), and how to populate each with static-account,
-impersonated-account, and roleset entries.
+This runbook covers the Vault-side layout the migration expects: one GCP
+secrets engine mount per application, and how to populate it with
+static-account, impersonated-account, and roleset entries. The
+Kubernetes vs non-Kubernetes split lives at the entity level inside the
+single mount, by convention with an `-app` suffix on the entity name.
 
-## Two mounts per app
+## One mount per app, two entities per logical secret
 
-Every application gets two GCP secrets engine mounts:
+Every application gets exactly one GCP secrets engine mount:
 
-| Mount path                     | Runtime               |
-|--------------------------------|-----------------------|
-| `<env>/<app>/gcp/`             | Non-Kubernetes        |
-| `<env>/<app>-app/gcp/`         | Kubernetes            |
+| Mount path             | Holds                                           |
+|------------------------|-------------------------------------------------|
+| `<env>/<app>/gcp/`     | Every entity for the app, both runtimes.        |
 
-The `-app` suffix on the second mount is the convention the platform uses
-to distinguish Kubernetes workloads. The migration tool does not enforce
-it, and it does not synthesize the second mount if only one is present;
-it simply discovers what exists.
+Inside that single mount, the operator creates one entity per logical
+secret per runtime:
+
+| Entity name                   | Runtime         |
+|-------------------------------|-----------------|
+| `<entity_name>`               | Non-Kubernetes  |
+| `<entity_name>-app`           | Kubernetes      |
+
+The `-app` suffix on the entity name is the convention the platform
+uses to distinguish Kubernetes workloads. The migration tool does not
+enforce it and does not synthesize the `-app` variant; it discovers
+whatever names the operator wrote.
 
 ### Worked example
 
-For `app-1234-saas` in `prod`:
+For `app-1234-saas` in `prod`, with one logical roleset `dyn-secret1`:
 
 ```
-prod/app-1234-saas/gcp/        # non-Kubernetes
-prod/app-1234-saas-app/gcp/    # Kubernetes
+prod/app-1234-saas/gcp/                              # the only mount
+prod/app-1234-saas/gcp/roleset/dyn-secret1           # non-Kubernetes entity
+prod/app-1234-saas/gcp/roleset/dyn-secret1-app       # Kubernetes entity
 ```
 
-Each mount produces its own set of Akeyless dynamic secrets, all named
+Each entity produces its own Akeyless dynamic secret, both named
 `<env>/<app>/gcp/rolesets/<entity_name>`.
 
 ## Mount path constraint
@@ -51,7 +60,7 @@ vault secrets move gcp/ prod/app-1234-saas/gcp/
 existing leases. If the source mount has live leases, revoke them or
 plan a maintenance window before moving.
 
-## Enabling the mounts
+## Enabling the mount
 
 Replace `<env>`, `<app>`, and `<project>` with your values, and point
 `-credentials=@...` at the parent SA's JSON key (the same one that ends
@@ -63,13 +72,8 @@ APP=app-1234-saas
 PROJECT=<your-project>
 PARENT_SA_KEY=./parent-sa.json
 
-# Non-Kubernetes mount.
 vault secrets enable -path="${ENV}/${APP}/gcp" gcp
 vault write "${ENV}/${APP}/gcp/config" credentials=@"${PARENT_SA_KEY}"
-
-# Kubernetes mount.
-vault secrets enable -path="${ENV}/${APP}-app/gcp" gcp
-vault write "${ENV}/${APP}-app/gcp/config" credentials=@"${PARENT_SA_KEY}"
 ```
 
 ### Verify
@@ -83,16 +87,22 @@ Expected:
 
 ```json
 [
-  "prod/app-1234-saas-app/gcp/",
   "prod/app-1234-saas/gcp/"
 ]
 ```
 
+One key per app, not two.
+
 ## Populating entries
 
-Each mount can hold any combination of static-account,
+The single mount holds any combination of static-account,
 impersonated-account, and roleset entries. The migration enumerates all
 three types per mount.
+
+For each logical secret, create both the bare entity and the `-app`
+variant if the app has a Kubernetes runtime. The two entities are
+independent Vault objects under the same mount; nothing in Vault links
+them.
 
 ### static-account
 
@@ -100,8 +110,17 @@ A static account binds a long-lived service account to one of:
 - `access_token` (default): Vault produces short-lived OAuth tokens.
 - `service_account_key`: Vault produces JSON keys.
 
+Create both runtime variants:
+
 ```bash
+# Non-Kubernetes variant.
 vault write "${ENV}/${APP}/gcp/static-account/db-static" \
+  service_account_email="db-app@${PROJECT}.iam.gserviceaccount.com" \
+  secret_type="access_token" \
+  token_scopes="https://www.googleapis.com/auth/cloud-platform"
+
+# Kubernetes variant (same mount, "-app" entity-name suffix).
+vault write "${ENV}/${APP}/gcp/static-account/db-static-app" \
   service_account_email="db-app@${PROJECT}.iam.gserviceaccount.com" \
   secret_type="access_token" \
   token_scopes="https://www.googleapis.com/auth/cloud-platform"
@@ -116,6 +135,10 @@ Credentials API.
 vault write "${ENV}/${APP}/gcp/impersonated-account/run-deploy" \
   service_account_email="run-deploy@${PROJECT}.iam.gserviceaccount.com" \
   token_scopes="https://www.googleapis.com/auth/cloud-platform"
+
+vault write "${ENV}/${APP}/gcp/impersonated-account/run-deploy-app" \
+  service_account_email="run-deploy@${PROJECT}.iam.gserviceaccount.com" \
+  token_scopes="https://www.googleapis.com/auth/cloud-platform"
 ```
 
 ### roleset
@@ -123,13 +146,24 @@ vault write "${ENV}/${APP}/gcp/impersonated-account/run-deploy" \
 A roleset creates a fresh service account per lease and applies the
 configured IAM bindings to it. There is no static `service_account_email`
 on a roleset; the per-lease SA is ephemeral. The migration handles this
-by asking you to pre-create one durable SA per `(env, app, roleset)`
-tuple and pass its email through `var.roleset_sa_overrides`. See
-[`05-roleset-durable-sa.md`](05-roleset-durable-sa.md) for the full
-walkthrough.
+by asking you to pre-create one durable SA per `(env, app, roleset_name)`
+tuple and pass its email through `var.roleset_sa_overrides`. The
+`roleset_name` is the literal Vault entity name and may itself end in
+`-app`. See [`05-roleset-durable-sa.md`](05-roleset-durable-sa.md) for
+the full walkthrough.
 
 ```bash
 vault write "${ENV}/${APP}/gcp/roleset/dyn-secret1" \
+  project="${PROJECT}" \
+  secret_type="access_token" \
+  token_scopes="https://www.googleapis.com/auth/cloud-platform" \
+  bindings=-<<EOF
+resource "//cloudresourcemanager.googleapis.com/projects/${PROJECT}" {
+  roles = ["roles/storage.objectViewer"]
+}
+EOF
+
+vault write "${ENV}/${APP}/gcp/roleset/dyn-secret1-app" \
   project="${PROJECT}" \
   secret_type="access_token" \
   token_scopes="https://www.googleapis.com/auth/cloud-platform" \
@@ -156,8 +190,14 @@ curl -sH "X-Vault-Token: $VAULT_TOKEN" \
   | jq .data.keys
 ```
 
-Expected: a JSON array of names per kind, or `null` (which means 404,
-empty path) for kinds the operator did not populate.
+Expected for each kind: a JSON array containing both the bare names and
+the `-app` variants the operator wrote, or `null` (which means 404,
+empty path) for kinds the operator did not populate. For the worked
+example above, the `roleset` LIST returns:
+
+```json
+["dyn-secret1", "dyn-secret1-app"]
+```
 
 ## What the migration sees
 
@@ -165,14 +205,17 @@ Given the example above, after running the discovery curls in
 [`04-discovery-walkthrough.md`](04-discovery-walkthrough.md), the
 migration's `local.migration_map` contains:
 
-| Map key                                                       | Akeyless DS path                                        |
-|---------------------------------------------------------------|---------------------------------------------------------|
-| `prod/app-1234-saas/static-account/db-static`                 | `prod/app-1234-saas/gcp/rolesets/db-static`             |
-| `prod/app-1234-saas/impersonated-account/run-deploy`          | `prod/app-1234-saas/gcp/rolesets/run-deploy`            |
-| `prod/app-1234-saas/roleset/dyn-secret1`                      | `prod/app-1234-saas/gcp/rolesets/dyn-secret1`           |
+| Map key                                                            | Akeyless DS path                                            |
+|--------------------------------------------------------------------|-------------------------------------------------------------|
+| `prod/app-1234-saas/static-account/db-static`                      | `prod/app-1234-saas/gcp/rolesets/db-static`                 |
+| `prod/app-1234-saas/static-account/db-static-app`                  | `prod/app-1234-saas/gcp/rolesets/db-static-app`             |
+| `prod/app-1234-saas/impersonated-account/run-deploy`               | `prod/app-1234-saas/gcp/rolesets/run-deploy`                |
+| `prod/app-1234-saas/impersonated-account/run-deploy-app`           | `prod/app-1234-saas/gcp/rolesets/run-deploy-app`            |
+| `prod/app-1234-saas/roleset/dyn-secret1`                           | `prod/app-1234-saas/gcp/rolesets/dyn-secret1`               |
+| `prod/app-1234-saas/roleset/dyn-secret1-app`                       | `prod/app-1234-saas/gcp/rolesets/dyn-secret1-app`           |
 
-Plus the mirror under `prod/app-1234-saas-app/...` if you populated the
-Kubernetes mount with the same entities.
+Two rows per logical secret, one Akeyless dynamic secret per row, all
+under the same `<env>/<app>/gcp/rolesets/` folder.
 
 ## Next steps
 

@@ -52,8 +52,8 @@ curl -sH "X-Vault-Token: $VAULT_TOKEN" \
 ```
 
 Expected: a JSON array of mount paths like
-`["prod/app-1234-saas/gcp/", "prod/app-1234-saas-app/gcp/"]`. An empty
-array means no GCP mounts exist yet; see
+`["prod/app-1234-saas/gcp/", "prod/app-9999-newco/gcp/"]`, one per
+application. An empty array means no GCP mounts exist yet; see
 [`03-vault-structure.md`](03-vault-structure.md). A `403` means the policy
 is missing.
 
@@ -165,5 +165,6 @@ Collect these before running `terraform plan`. They map 1:1 to the tfvars.
 
 ## Next steps
 
-- [Vault structure](03-vault-structure.md). The two-mount-per-app layout
-  and how to set it up with `vault secrets enable` and `vault write`.
+- [Vault structure](03-vault-structure.md). The one-mount-per-app
+  layout, the entity-level `-app` runtime split, and how to populate it
+  with `vault secrets enable` and `vault write`.

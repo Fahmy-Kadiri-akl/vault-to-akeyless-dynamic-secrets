@@ -58,17 +58,27 @@ What to look for in the plan output:
 1. **One `akeyless_target_gcp.migrated_from_vault`** to create. Just
    one, regardless of how many apps you discovered.
 2. **One `akeyless_dynamic_secret_gcp.migrated["..."]`** per discovered
-   `(env, app, kind, name)` tuple. The count should equal:
-
-   ```
-   (number of GCP mounts in Vault)
-     x (sum of static-account + impersonated-account + roleset entries
-        across each mount)
-   ```
+   `(env, app, kind, name)` tuple. The count equals the total number of
+   Vault entities across all GCP mounts: every key returned by every
+   per-kind LIST. A logical secret with both runtime variants
+   contributes two rows (one for the bare entity, one for the `-app`
+   entity), both under the same mount.
 
    Use the curls from
    [`04-discovery-walkthrough.md`](04-discovery-walkthrough.md) to
    compute the expected count out-of-band before plan.
+
+   For example, if `prod/app-1234-saas/gcp/roleset?list=true` returns
+   `["dyn-secret1", "dyn-secret1-app"]`, the plan adds:
+
+   ```
+   # akeyless_dynamic_secret_gcp.migrated["prod/app-1234-saas/roleset/dyn-secret1"]
+   #   name = "prod/app-1234-saas/gcp/rolesets/dyn-secret1"
+   #
+   # akeyless_dynamic_secret_gcp.migrated["prod/app-1234-saas/roleset/dyn-secret1-app"]
+   #   name = "prod/app-1234-saas/gcp/rolesets/dyn-secret1-app"
+   ```
+
 3. **Every resource `name` matches** `<env>/<app>/gcp/rolesets/<entity>`.
    The literal folder is `gcp/rolesets/` for static accounts,
    impersonated accounts, AND rolesets.
@@ -125,22 +135,32 @@ akeyless dynamic-secret list --filter '/prod/app-1234-saas/' \
 ```
 
 Expected (one entry per discovered Vault entity, all under
-`gcp/rolesets/`):
+`gcp/rolesets/`, with the `-app` runtime variants alongside the bare
+names):
 
 ```json
 { "name": "/prod/app-1234-saas/gcp/rolesets/db-static", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
+{ "name": "/prod/app-1234-saas/gcp/rolesets/db-static-app", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
 { "name": "/prod/app-1234-saas/gcp/rolesets/run-deploy", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
+{ "name": "/prod/app-1234-saas/gcp/rolesets/run-deploy-app", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
 { "name": "/prod/app-1234-saas/gcp/rolesets/dyn-secret1", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
+{ "name": "/prod/app-1234-saas/gcp/rolesets/dyn-secret1-app", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
 ```
 
 ### Get a value (token mode)
 
+Fetch both runtime variants and compare. They are independent dynamic
+secrets that happen to share a logical name.
+
 ```bash
 akeyless dynamic-secret get-value \
   --name '/prod/app-1234-saas/gcp/rolesets/dyn-secret1'
+
+akeyless dynamic-secret get-value \
+  --name '/prod/app-1234-saas/gcp/rolesets/dyn-secret1-app'
 ```
 
-Expected:
+Expected (one response per call):
 
 ```json
 {
@@ -149,6 +169,14 @@ Expected:
   "token_type": "Bearer"
 }
 ```
+
+If the two runtime variants point at the same durable SA in
+`var.roleset_sa_overrides`, the two access tokens will represent the
+same Google identity but be issued separately (different `access_token`
+strings, same SA email under the hood). If they point at different SAs,
+the tokens belong to different identities. Confirm by decoding each
+token via `gcloud auth application-default print-access-token` style
+introspection or by calling `tokeninfo`.
 
 ### Get a value (key mode)
 

@@ -23,18 +23,13 @@ curl -sH "X-Vault-Token: $VAULT_TOKEN" \
   | jq '. | with_entries(select(.value.type=="gcp"))'
 ```
 
-Expected output (trimmed to the relevant fields):
+Expected output (trimmed to the relevant fields), one entry per app:
 
 ```json
 {
   "prod/app-1234-saas/gcp/": {
     "type": "gcp",
     "accessor": "gcp_XXXXXXXX",
-    "config": { "default_lease_ttl": 0, "max_lease_ttl": 0 }
-  },
-  "prod/app-1234-saas-app/gcp/": {
-    "type": "gcp",
-    "accessor": "gcp_YYYYYYYY",
     "config": { "default_lease_ttl": 0, "max_lease_ttl": 0 }
   }
 }
@@ -105,7 +100,8 @@ curl -sH "X-Vault-Token: $VAULT_TOKEN" \
   "$VAULT_ADDR/v1/$MOUNT/roleset?list=true" | jq .
 ```
 
-Expected when entries exist:
+Expected when entries exist (note both runtime variants of each logical
+secret appear side by side under the same mount):
 
 ```json
 {
@@ -113,11 +109,16 @@ Expected when entries exist:
   "lease_id": "",
   "renewable": false,
   "data": {
-    "keys": ["dyn-secret1", "another-name"]
+    "keys": ["dyn-secret1", "dyn-secret1-app", "another-name", "another-name-app"]
   },
   "warnings": null
 }
 ```
+
+Names ending in `-app` are the Kubernetes-runtime variant of the
+adjacent bare name. The migration treats each key as an independent
+Vault entity; nothing inside the tool links a bare name to its `-app`
+sibling.
 
 Expected when the path has no entries (this is normal):
 
@@ -212,6 +213,20 @@ akeyless_dynamic_secret_gcp.migrated["<env>/<app>/<kind>/<name>"]
   gcp_cred_type    = <token|key>
   gcp_sa_email     = <from Vault, or from var.roleset_sa_overrides for rolesets>
   gcp_token_scopes = "<scope1>,<scope2>,..."
+```
+
+Each logical secret with both runtime variants produces two such
+resources: one for `<name>` and one for `<name>-app`. Both share the
+same `<env>/<app>/gcp/rolesets/` folder. For the example LIST result
+`["dyn-secret1", "dyn-secret1-app"]` under the `roleset` kind, the plan
+adds:
+
+```
+akeyless_dynamic_secret_gcp.migrated["prod/app-1234-saas/roleset/dyn-secret1"]
+  name = "prod/app-1234-saas/gcp/rolesets/dyn-secret1"
+
+akeyless_dynamic_secret_gcp.migrated["prod/app-1234-saas/roleset/dyn-secret1-app"]
+  name = "prod/app-1234-saas/gcp/rolesets/dyn-secret1-app"
 ```
 
 Plus exactly one `akeyless_target_gcp.migrated_from_vault` for the parent

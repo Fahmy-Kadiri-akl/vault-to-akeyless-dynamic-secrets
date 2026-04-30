@@ -5,6 +5,12 @@ service account differently. This runbook explains why each Vault roleset
 needs a pre-created durable SA, how to mint one, and how to wire it into
 `var.roleset_sa_overrides`.
 
+Durable-SA creation is IAM-admin work. The simplest path is to run the
+`gcloud iam service-accounts create` and IAM-binding commands below
+from your workstation (where `gcloud auth list` already shows a user
+identity) rather than from the VM. See the "Local tools" bullet in
+[`02-prerequisites.md`](02-prerequisites.md#local-tools).
+
 ## Why rolesets need an override
 
 | Concept                                 | Vault roleset                                            | Akeyless dynamic secret (fixed-SA mode)                |

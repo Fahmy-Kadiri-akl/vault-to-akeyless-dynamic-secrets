@@ -94,16 +94,37 @@ There are two valid path suffixes depending on how your gateway is exposed:
 If you do not know which form applies, try `/v2` first; if it 404s on a
 known endpoint, switch to `/api/v2`.
 
+Hit a known POST endpoint and check the status code. `static-creds-auth`
+is a real V2 endpoint that returns `400` with no body, which is the
+cheapest way to prove TLS reachability and path routing without
+authenticating:
+
 ```bash
 URL="$AKEYLESS_GATEWAY_URL"
-curl -sI "${URL}/configurations/get-status" -X POST
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST \
+  "${URL}/static-creds-auth"
 ```
 
-Expected: `HTTP/1.1 400` or `HTTP/2 400` (this endpoint requires a body;
-the 400 only proves TLS reachability and routing). `HTTP/2 404` with a
-`text/plain` body usually means the path suffix is wrong: switch
-between `/v2` and `/api/v2` and retry. A network error means the URL is
-wrong or the gateway is not reachable from your Terraform host.
+Expected: `400` (the endpoint requires a request body; the 400 only
+proves the URL is correct). Interpret other responses with this
+heuristic:
+
+- `404` with `text/plain` body `404 page not found`: the ingress or
+  reverse proxy rejected the path. Flip between `/v2` and `/api/v2` on
+  `$AKEYLESS_GATEWAY_URL` and retry.
+- `404` with `application/json` body like `{"error":"unknown command 'X'"}`:
+  the URL prefix is correct (the gateway is being reached) but the test
+  endpoint name does not exist on this gateway version. Pick a
+  different known endpoint such as `auth`.
+- A connection error (refused, timeout, TLS failure): the URL host or
+  port is wrong, or the gateway is not reachable from your Terraform
+  host.
+
+`akeyless` CLI note: every `akeyless dynamic-secret ...` invocation in
+this repo needs `--gateway-url <gateway-host>` (just the hostname, with
+no `/v2` or `/api/v2` suffix), unless your CLI profile already targets
+the right gateway. Example:
+`akeyless dynamic-secret list --gateway-url https://gateway.example.com --json`.
 
 ### GCP-SA auth vs. other methods
 
@@ -144,6 +165,12 @@ The full creation walkthrough lives in
       and child SAs.
 - [ ] `akeyless` CLI for verification commands.
 - [ ] `jq` for parsing the verification snippets in this runbook.
+- [ ] Or: run all IAM-admin gcloud commands (SA create, role bindings,
+      key mint) from your workstation where `gcloud auth list` already
+      shows a user identity, then
+      `gcloud compute scp ./parent-sa.json <vm>:~/...` onto the VM. Run
+      only `terraform`, `vault`, `akeyless`, and gateway-side gcloud on
+      the VM.
 
 When you run Terraform from a GCE VM, `gcloud` defaults to the VM's
 attached compute service account. That identity is what the Akeyless
@@ -155,7 +182,11 @@ exclude IAM admin, so the SA-management commands later in
 admin SA whose key you trust on the VM) for those steps with
 `gcloud auth login` or
 `gcloud auth activate-service-account --key-file=<admin-key>.json`,
-then switch back to the VM SA when you need `gcp_login`.
+then switch back to the VM SA when you need `gcp_login`. The fastest
+path in practice is the workstation-fallback bullet above: run every
+IAM-admin gcloud command on your laptop (where you are already
+logged in as a user) and only the gateway-side gcloud and Terraform on
+the VM.
 
 ### Verify versions
 

@@ -102,6 +102,13 @@ Vault change.
 
 ## Verify with the akeyless CLI
 
+Every `akeyless dynamic-secret ...` invocation in this section needs
+`--gateway-url <gateway-host>` (just the hostname; no `/v2` or `/api/v2`
+suffix), unless your CLI profile already targets the right gateway. The
+default endpoint is `http://localhost:8000`, so without the flag the
+calls fail with `connection refused`. The examples below use
+`https://gateway.example.com` as the placeholder; substitute your own.
+
 ### Check the target
 
 ```bash
@@ -120,18 +127,23 @@ Expected:
 
 ```bash
 akeyless target get-details --name migrated-from-vault-gcp \
-  | jq '.value | { type, gcp_service_account_email }'
+  | jq '{ type: .target.target_type, gcp: .value.gcp_target_details }'
 ```
 
-Expected: `type` is `gcp` and the SA email matches your parent SA.
+Expected: `type` is `gcp` and `gcp` is an object whose
+`service_account_email` (or equivalent field) matches your parent SA.
+Note that `target_type` lives at `.target.target_type`, not under
+`.value`, and the GCP fields are nested under `.value.gcp_target_details`.
 
 ### Check the dynamic secrets
 
-List everything created under one app's path:
+List everything created under one app's path. The CLI has no
+server-side filter flag, so list and filter client-side with `jq`
+against `.producers[].name`:
 
 ```bash
-akeyless dynamic-secret list --filter '/prod/app-1234-saas/' \
-  | jq '.items[] | { name: .item_name, type: .item_type, target: .item_targets[0].target_name }'
+akeyless dynamic-secret list --gateway-url https://gateway.example.com --json \
+  | jq '[.producers[] | select(.name | startswith("/prod/app-1234-saas/"))]'
 ```
 
 Expected (one entry per discovered Vault entity, all under
@@ -139,12 +151,14 @@ Expected (one entry per discovered Vault entity, all under
 names):
 
 ```json
-{ "name": "/prod/app-1234-saas/gcp/rolesets/db-static", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
-{ "name": "/prod/app-1234-saas/gcp/rolesets/db-static-app", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
-{ "name": "/prod/app-1234-saas/gcp/rolesets/run-deploy", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
-{ "name": "/prod/app-1234-saas/gcp/rolesets/run-deploy-app", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
-{ "name": "/prod/app-1234-saas/gcp/rolesets/dyn-secret1", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
-{ "name": "/prod/app-1234-saas/gcp/rolesets/dyn-secret1-app", "type": "DYNAMIC_SECRET", "target": "/migrated-from-vault-gcp" }
+[
+  { "name": "/prod/app-1234-saas/gcp/rolesets/db-static" },
+  { "name": "/prod/app-1234-saas/gcp/rolesets/db-static-app" },
+  { "name": "/prod/app-1234-saas/gcp/rolesets/run-deploy" },
+  { "name": "/prod/app-1234-saas/gcp/rolesets/run-deploy-app" },
+  { "name": "/prod/app-1234-saas/gcp/rolesets/dyn-secret1" },
+  { "name": "/prod/app-1234-saas/gcp/rolesets/dyn-secret1-app" }
+]
 ```
 
 ### Get a value (token mode)
@@ -153,10 +167,10 @@ Fetch both runtime variants and compare. They are independent dynamic
 secrets that happen to share a logical name.
 
 ```bash
-akeyless dynamic-secret get-value \
+akeyless dynamic-secret get-value --gateway-url https://gateway.example.com \
   --name '/prod/app-1234-saas/gcp/rolesets/dyn-secret1'
 
-akeyless dynamic-secret get-value \
+akeyless dynamic-secret get-value --gateway-url https://gateway.example.com \
   --name '/prod/app-1234-saas/gcp/rolesets/dyn-secret1-app'
 ```
 
@@ -183,7 +197,7 @@ introspection or by calling `tokeninfo`.
 For a static account whose Vault `secret_type` is `service_account_key`:
 
 ```bash
-akeyless dynamic-secret get-value \
+akeyless dynamic-secret get-value --gateway-url https://gateway.example.com \
   --name '/prod/app-1234-saas/gcp/rolesets/db-static-key'
 ```
 
@@ -206,14 +220,14 @@ Pick one entity. Read both:
 vault read prod/app-1234-saas/gcp/static-account/db-static
 
 # Akeyless
-akeyless dynamic-secret get-details \
+akeyless dynamic-secret get --gateway-url https://gateway.example.com \
   --name '/prod/app-1234-saas/gcp/rolesets/db-static' \
   | jq '.value | { gcp_service_account_email, gcp_cred_type, gcp_token_scopes }'
 ```
 
 Expected: the SA email matches Vault's `service_account_email`, the cred
-type maps `service_account_key -> key` and `access_token -> token`, and
-the scopes match the Vault `token_scopes` list.
+type maps `service_account_key` to `key` and `access_token` to `token`,
+and the scopes match the Vault `token_scopes` list.
 
 ### Inspect the migration summary output
 

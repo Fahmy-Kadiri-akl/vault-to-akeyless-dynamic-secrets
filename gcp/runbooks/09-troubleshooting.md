@@ -157,10 +157,25 @@ Fix: pick the suffix that matches how the gateway is reachable.
   akeyless_gateway_url = "https://gateway.example.com/api/v2"
   ```
 
-Verify either form with
-`curl -sI "${URL}/configurations/get-status" -X POST` and expect 400.
-A 404 on that endpoint means the suffix is wrong; flip between `/v2`
-and `/api/v2` and retry.
+Verify either form by hitting a real V2 POST endpoint and reading the
+status code:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST \
+  "${AKEYLESS_GATEWAY_URL}/static-creds-auth"
+```
+
+Expected: `400` (the endpoint requires a request body; the 400 only
+proves the URL is correct). Read 404s carefully:
+
+- `404` with `text/plain` body `404 page not found`: the ingress or
+  reverse proxy rejected the path. Flip between `/v2` and `/api/v2` on
+  `var.akeyless_gateway_url` and retry.
+- `404` with `application/json` body like
+  `{"error":"unknown command 'X'"}`: the URL prefix is correct (the
+  gateway is being reached) but the test endpoint name does not exist
+  on this gateway version. Pick a different known endpoint such as
+  `auth`.
 
 ## Akeyless provider login fails with `gcp_login: ...`
 

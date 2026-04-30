@@ -43,9 +43,14 @@ Vault-side change followed by a Terraform re-run. No module changes.
 
 ### Verify
 
+The CLI has no server-side filter flag, so list and filter client-side
+with `jq` against `.producers[].name`. Pass `--gateway-url` (hostname
+only, no `/v2` or `/api/v2` suffix) on every `akeyless dynamic-secret`
+call unless your CLI profile already targets the right gateway:
+
 ```bash
-akeyless dynamic-secret list --filter "/prod/${APP}/" \
-  | jq '.items[].item_name'
+akeyless dynamic-secret list --gateway-url https://gateway.example.com --json \
+  | jq '[.producers[] | select(.name | startswith("/prod/'"$APP"'/")) | .name]'
 ```
 
 Expected: one path per Vault entity in the new app, all under
@@ -167,7 +172,8 @@ The parent SA's JSON key has a finite useful life. Rotate periodically.
    No dynamic secret resources change.
 
 3. After confirming new leases work (issue a value via
-   `akeyless dynamic-secret get-value`), delete the old key:
+   `akeyless dynamic-secret get-value --gateway-url https://gateway.example.com --name <path>`),
+   delete the old key:
 
    ```bash
    # List keys to find the old key id.

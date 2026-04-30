@@ -31,8 +31,11 @@ variable "akeyless_gateway_url" {
       - Ingress-fronted (nginx, Istio) gateways on a path-based route use
         "/api/v2", e.g.
           "https://gateway.example.com/api/v2"
-    Verify with `curl -sI "$${URL}/configurations/get-status" -X POST`
-    and expect HTTP 400. A 404 means the suffix is wrong.
+    Verify with `curl -sS -o /dev/null -w '%%{http_code}\n' -X POST "$${URL}/static-creds-auth"`
+    and expect HTTP 400 (missing request body). A text/plain `404 page not
+    found` means the suffix is wrong (flip between `/v2` and `/api/v2`); a
+    JSON `{"error":"unknown command ..."}` 404 means the suffix is right
+    but the test endpoint name is unknown to your gateway version.
   EOT
   type        = string
 }

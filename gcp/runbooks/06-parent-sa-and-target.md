@@ -52,6 +52,13 @@ ends up in `var.parent_sa_credentials`.
 
 ## Minting the parent SA
 
+These steps are IAM-admin work. The simplest path is to run them from
+your workstation (where `gcloud auth list` already shows a user
+identity) and `gcloud compute scp ./parent-sa.json <vm>:~/...` the
+resulting key onto the VM before `terraform apply`. See the
+"Local tools" bullet in
+[`02-prerequisites.md`](02-prerequisites.md#local-tools).
+
 If you are running these `gcloud` commands from a GCE VM, the default
 identity is the VM's attached compute SA, whose scopes typically exclude
 IAM admin. `gcloud iam service-accounts create` and

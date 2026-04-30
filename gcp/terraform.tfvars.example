@@ -45,9 +45,13 @@ akeyless_gcp_audience = "akeyless.io"
 #   - Ingress-fronted gateway (nginx, Istio) on a path-based route: append
 #     "/api/v2", e.g.
 #       https://gateway.example.com/api/v2
-# Verify with `curl -sI "${URL}/configurations/get-status" -X POST` and
-# expect HTTP 400. A 404 means the suffix is wrong; flip between /v2 and
-# /api/v2 and retry.
+# Verify by hitting a real V2 POST endpoint such as static-creds-auth:
+#   curl -sS -o /dev/null -w '%{http_code}\n' -X POST "${URL}/static-creds-auth"
+# Expect HTTP 400 (the endpoint requires a body; the 400 only proves the URL
+# is correct). 404 with text/plain `404 page not found` means the ingress
+# rejected the path: flip between /v2 and /api/v2 and retry. 404 with
+# application/json `{"error":"unknown command 'X'"}` means the URL prefix is
+# correct but the test endpoint name is wrong: pick another known endpoint.
 akeyless_gateway_url = "https://your-gateway.example.com:8081/v2"
 
 akeyless_target_name = "migrated-from-vault-gcp"

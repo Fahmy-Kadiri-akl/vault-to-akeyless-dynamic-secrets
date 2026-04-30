@@ -48,7 +48,7 @@ vault token create -policy=vault-to-akeyless-migration -ttl=1h -format=json \
 export VAULT_TOKEN=<token-from-above>
 curl -sH "X-Vault-Token: $VAULT_TOKEN" \
   "$VAULT_ADDR/v1/sys/mounts" \
-  | jq '. | with_entries(select(.value.type=="gcp")) | keys'
+  | jq '.data | with_entries(select(.value.type=="gcp")) | keys'
 ```
 
 Expected: a JSON array of mount paths like
@@ -82,13 +82,28 @@ already know which auth method to use.
 
 ### Verify the gateway URL
 
+There are two valid path suffixes depending on how your gateway is exposed:
+
+- Gateway reachable on its native SDK port (e.g. `:8081` direct or
+  port-forward) uses `/v2`, e.g. `https://gateway.example.com:8081/v2`.
+- Gateway fronted by an ingress (nginx, Istio) that mounts the gateway
+  behind a path-based route uses `/api/v2`, e.g.
+  `https://gateway.example.com/api/v2`. The ingress strips or rewrites
+  the prefix so the upstream still sees `/v2`.
+
+If you do not know which form applies, try `/v2` first; if it 404s on a
+known endpoint, switch to `/api/v2`.
+
 ```bash
-curl -sI "${AKEYLESS_GATEWAY_URL%/v2}/v2/configurations/get-status" -X POST
+URL="$AKEYLESS_GATEWAY_URL"
+curl -sI "${URL}/configurations/get-status" -X POST
 ```
 
 Expected: `HTTP/1.1 400` or `HTTP/2 400` (this endpoint requires a body;
-the 400 only proves TLS reachability and routing). A network error means
-the URL is wrong or the gateway is not reachable from your Terraform host.
+the 400 only proves TLS reachability and routing). `HTTP/2 404` with a
+`text/plain` body usually means the path suffix is wrong: switch
+between `/v2` and `/api/v2` and retry. A network error means the URL is
+wrong or the gateway is not reachable from your Terraform host.
 
 ### GCP-SA auth vs. other methods
 
@@ -129,6 +144,18 @@ The full creation walkthrough lives in
       and child SAs.
 - [ ] `akeyless` CLI for verification commands.
 - [ ] `jq` for parsing the verification snippets in this runbook.
+
+When you run Terraform from a GCE VM, `gcloud` defaults to the VM's
+attached compute service account. That identity is what the Akeyless
+provider's `gcp_login` block uses, but its access scopes typically
+exclude IAM admin, so the SA-management commands later in
+[`06-parent-sa-and-target.md`](06-parent-sa-and-target.md) and
+[`05-roleset-durable-sa.md`](05-roleset-durable-sa.md) will return
+`ACCESS_TOKEN_SCOPE_INSUFFICIENT`. Authenticate a user identity (or an
+admin SA whose key you trust on the VM) for those steps with
+`gcloud auth login` or
+`gcloud auth activate-service-account --key-file=<admin-key>.json`,
+then switch back to the VM SA when you need `gcp_login`.
 
 ### Verify versions
 

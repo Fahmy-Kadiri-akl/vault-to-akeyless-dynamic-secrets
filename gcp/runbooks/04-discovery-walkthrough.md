@@ -20,7 +20,7 @@ The module starts with `data "http" "list_mounts"`:
 ```bash
 curl -sH "X-Vault-Token: $VAULT_TOKEN" \
   "$VAULT_ADDR/v1/sys/mounts" \
-  | jq '. | with_entries(select(.value.type=="gcp"))'
+  | jq '.data | with_entries(select(.value.type=="gcp"))'
 ```
 
 Expected output (trimmed to the relevant fields), one entry per app:
@@ -59,7 +59,7 @@ named. Fix with `vault secrets move`; see
 ```bash
 curl -sH "X-Vault-Token: $VAULT_TOKEN" \
   "$VAULT_ADDR/v1/sys/mounts" \
-  | jq -r '. | to_entries[] | select(.value.type=="gcp") | .key' \
+  | jq -r '.data | to_entries[] | select(.value.type=="gcp") | .key' \
   | while read mp; do
       mp="${mp%/}"
       n=$(echo "$mp" | awk -F/ '{print NF}')
@@ -136,7 +136,7 @@ A quick one-liner that mirrors what the tool does:
 
 ```bash
 for MOUNT in $(curl -sH "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/sys/mounts" \
-                | jq -r '. | to_entries[] | select(.value.type=="gcp") | .key | rtrimstr("/")'); do
+                | jq -r '.data | to_entries[] | select(.value.type=="gcp") | .key | rtrimstr("/")'); do
   for KIND in static-account impersonated-account roleset; do
     code=$(curl -s -o /dev/null -w '%{http_code}' \
       -H "X-Vault-Token: $VAULT_TOKEN" \

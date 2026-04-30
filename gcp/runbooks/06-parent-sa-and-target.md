@@ -21,7 +21,47 @@ Akeyless needs at minimum:
 
 Bind project-wide for ease, or per child SA for least-privilege.
 
+### Extra roles when the same SA is the Vault GCP config SA and any rolesets exist
+
+In the per-app walkthrough in
+[`03-vault-structure.md`](03-vault-structure.md), the parent SA's JSON
+key is also the credentials handed to `vault write <mount>/gcp/config`.
+Vault uses that identity at *roleset write time* to create one
+ephemeral service account per roleset and bind IAM policies to it.
+Those operations need IAM-admin authority that token-creator and
+key-admin alone do not grant. When the parent SA doubles as the Vault
+GCP config SA and any rolesets are in scope, also bind:
+
+- `roles/iam.serviceAccountAdmin` (so Vault can create and delete
+  per-roleset service accounts).
+- `roles/resourcemanager.projectIamAdmin` (so Vault can edit the
+  project IAM policy when a roleset's `bindings` block grants project
+  roles).
+
+Without these, `vault write <mount>/gcp/roleset/<name>` fails with
+`Permission 'iam.serviceAccounts.create' denied` and the rolesets
+section of [`03-vault-structure.md`](03-vault-structure.md) cannot be
+executed verbatim.
+
+If you prefer least-privilege, split the SAs: keep one parent SA with
+just the two token/key roles for Akeyless to call as, and use a
+separate "Vault config SA" with the four roles above (token-creator,
+key-admin, serviceAccountAdmin, projectIamAdmin) for
+`vault write <mount>/gcp/config`. Only the Akeyless-target SA's JSON
+ends up in `var.parent_sa_credentials`.
+
 ## Minting the parent SA
+
+If you are running these `gcloud` commands from a GCE VM, the default
+identity is the VM's attached compute SA, whose scopes typically exclude
+IAM admin. `gcloud iam service-accounts create` and
+`gcloud projects add-iam-policy-binding` will return
+`ACCESS_TOKEN_SCOPE_INSUFFICIENT` until you switch to a user identity or
+an admin SA. Run `gcloud auth login` (interactive) or
+`gcloud auth activate-service-account --key-file=<admin-key>.json` first.
+Keep that identity separate from the VM SA used by the Akeyless
+provider's `gcp_login`; you only need the IAM-admin identity for the
+SA-creation and binding steps below.
 
 Replace `<your-project>` and `<sa-id>` with your values:
 
@@ -43,6 +83,17 @@ gcloud projects add-iam-policy-binding "$PROJECT" \
 gcloud projects add-iam-policy-binding "$PROJECT" \
   --member "serviceAccount:${SA_EMAIL}" \
   --role   "roles/iam.serviceAccountKeyAdmin"
+
+# Add these two only if the same SA is also the Vault GCP config SA AND
+# any rolesets are in scope. See "Extra roles when the same SA is the
+# Vault GCP config SA and any rolesets exist" above.
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member "serviceAccount:${SA_EMAIL}" \
+  --role   "roles/iam.serviceAccountAdmin"
+
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member "serviceAccount:${SA_EMAIL}" \
+  --role   "roles/resourcemanager.projectIamAdmin"
 
 # Mint and download the JSON key. Keep this file out of git
 # (.gitignore already excludes parent-sa.json and *.json).

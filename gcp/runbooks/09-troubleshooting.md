@@ -55,6 +55,20 @@ the source mount has live leases, revoke them or schedule a window
 before moving. See
 [`03-vault-structure.md`](03-vault-structure.md#mount-path-constraint).
 
+If the malformed mount belongs to another team on a shared Vault
+server, do not move it. Set `var.vault_mount_paths` to the allowlist
+of mounts you actually own:
+
+```hcl
+vault_mount_paths = [
+  "prod/app-1234-saas/gcp/",
+  "stage/app-1234-saas/gcp/",
+]
+```
+
+Out-of-scope mounts are silently skipped; in-scope malformed mounts
+still fail the precondition.
+
 ## `Vault LIST <mount>/<kind> returned HTTP 403`
 
 Diagnosis: the token has `read` on `sys/mounts` but lacks `list` on
@@ -121,17 +135,32 @@ Then re-run plan.
 ## Akeyless provider returns 404 / `dynamic-secret-create-gcp not found`
 
 Diagnosis: `var.akeyless_gateway_url` points at `https://api.akeyless.io`
-or another non-gateway endpoint. The public API does not expose the
-`dynamic-secret-create-gcp` operation; only customer gateways do.
+or another non-gateway endpoint, OR the path suffix on a real gateway
+URL does not match how the gateway is exposed. The public API does not
+expose the `dynamic-secret-create-gcp` operation; only customer
+gateways do.
 
-Fix: set `akeyless_gateway_url` to your gateway's V2 SDK URL:
+Fix: pick the suffix that matches how the gateway is reachable.
 
-```hcl
-akeyless_gateway_url = "https://gateway.example.com:8081/v2"
-```
+- Direct SDK port (e.g. `:8081` exposed by the service or a
+  port-forward): use `/v2`.
 
-The trailing `/v2` is required for the akeyless-community/akeyless
-provider.
+  ```hcl
+  akeyless_gateway_url = "https://gateway.example.com:8081/v2"
+  ```
+
+- Ingress-fronted gateway (nginx, Istio) on a path-based route: use
+  `/api/v2`. The ingress rewrites the prefix so the gateway still sees
+  `/v2` upstream.
+
+  ```hcl
+  akeyless_gateway_url = "https://gateway.example.com/api/v2"
+  ```
+
+Verify either form with
+`curl -sI "${URL}/configurations/get-status" -X POST` and expect 400.
+A 404 on that endpoint means the suffix is wrong; flip between `/v2`
+and `/api/v2` and retry.
 
 ## Akeyless provider login fails with `gcp_login: ...`
 

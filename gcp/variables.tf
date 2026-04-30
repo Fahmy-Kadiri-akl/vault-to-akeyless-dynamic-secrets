@@ -24,10 +24,15 @@ variable "akeyless_gateway_url" {
   description = <<-EOT
     URL of *your* Akeyless gateway's V2 SDK endpoint, NOT the public api.akeyless.io.
     The dynamic-secret-create-gcp operation is gateway-side and is not exposed on
-    the public API. Examples:
-      "https://gateway.example.com:8081/v2"     # gateway exposed via ingress
-      "http://127.0.0.1:8081/v2"                # via port-forward into the cluster
-    Trailing /v2 is required for the akeyless-community/akeyless provider.
+    the public API. Two valid path suffixes depending on exposure:
+      - Direct SDK port (e.g. :8081 or port-forward) uses "/v2", e.g.
+          "https://gateway.example.com:8081/v2"
+          "http://127.0.0.1:8081/v2"
+      - Ingress-fronted (nginx, Istio) gateways on a path-based route use
+        "/api/v2", e.g.
+          "https://gateway.example.com/api/v2"
+    Verify with `curl -sI "$${URL}/configurations/get-status" -X POST`
+    and expect HTTP 400. A 404 means the suffix is wrong.
   EOT
   type        = string
 }
@@ -42,6 +47,18 @@ variable "parent_sa_credentials" {
   description = "Raw JSON content of the parent service account key. Forwarded into akeyless_target_gcp.gcp_key after base64 encoding. Marked sensitive."
   type        = string
   sensitive   = true
+}
+
+variable "vault_mount_paths" {
+  description = <<-EOT
+    Optional allowlist of Vault GCP mount paths to migrate, e.g.
+    ["prod/app-1234-saas/gcp/", "stage/app-1234-saas/gcp/"]. Trailing
+    slash is optional. When empty (default), every type=="gcp" mount
+    from sys/mounts is in scope. Use this on shared Vault servers
+    where some mounts belong to other teams.
+  EOT
+  type        = list(string)
+  default     = []
 }
 
 variable "roleset_sa_overrides" {

@@ -23,20 +23,35 @@ locals {
     if try(info.type, "") == "gcp"
   }
 
+  # Optional allowlist. When var.vault_mount_paths is non-empty, restrict
+  # discovery to those mounts so the migration is usable on shared Vault
+  # servers where sibling mounts belong to other teams. Out-of-scope mounts
+  # are silently skipped; in-scope malformed mounts still fail the
+  # precondition below.
+  gcp_mounts_in_scope = (
+    length(var.vault_mount_paths) == 0
+    ? local.gcp_mounts_all
+    : { for mp, info in local.gcp_mounts_all :
+      mp => info if contains([for p in var.vault_mount_paths : trimsuffix(p, "/")], mp)
+    }
+  )
+
   # Validation. A valid mount path splits cleanly on "/" into exactly three
-  # non-empty segments and the third is the literal "gcp".
+  # non-empty segments and the third is the literal "gcp". The split-index
+  # check is guarded with try() so a one-segment mount like "gcp/" cannot
+  # crash the plan with "Invalid index" before the precondition runs.
   invalid_mount_paths = [
-    for mp, _ in local.gcp_mounts_all :
+    for mp, _ in local.gcp_mounts_in_scope :
     mp if(
       length(split("/", mp)) != 3
       || length([for s in split("/", mp) : s if s == ""]) > 0
-      || split("/", mp)[2] != "gcp"
+      || try(split("/", mp)[2] != "gcp", true)
     )
   ]
 
   # Final usable map: { "<env>/<app>/gcp" = { env = ..., app = ... } }
   gcp_mounts = {
-    for mp, _ in local.gcp_mounts_all :
+    for mp, _ in local.gcp_mounts_in_scope :
     mp => {
       env = split("/", mp)[0]
       app = split("/", mp)[1]

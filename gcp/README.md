@@ -35,6 +35,7 @@ For the deep-dive, read the runbooks in order:
 |---|---|---|---|
 | `vault_address` | `string` | required | Vault server URL. Easiest: `export TF_VAR_vault_address="$VAULT_ADDR"`. |
 | `vault_token` | `string` (sensitive) | required | Token with `read` on `sys/mounts` plus `read` and `list` on every `<env>/<app>/gcp/{static-account,impersonated-account,roleset}` path. Easiest: `export TF_VAR_vault_token="$VAULT_TOKEN"`. |
+| `vault_mount_paths` | `list(string)` | `[]` | Optional allowlist of Vault GCP mount paths to migrate (e.g. `["prod/app-1234-saas/gcp/"]`). Empty means all `type=="gcp"` mounts are in scope. Use on shared Vault servers where some mounts belong to other teams. |
 | `akeyless_access_id` | `string` | required | Akeyless access ID used by the provider login block. |
 | `akeyless_gcp_audience` | `string` | `"akeyless.io"` | Audience used by the GCP-SA auth method. |
 | `akeyless_gateway_url` | `string` | required | Your gateway's V2 SDK URL with `/v2` appended (e.g. `https://gateway.example.com:8081/v2`). Not the public `api.akeyless.io`. |

@@ -60,6 +60,28 @@ vault secrets move gcp/ prod/app-1234-saas/gcp/
 existing leases. If the source mount has live leases, revoke them or
 plan a maintenance window before moving.
 
+### When the malformed mount is not yours
+
+On shared Vault servers, the malformed mount may belong to another team
+and `vault secrets move` would be destructive to their data. Use the
+`vault_mount_paths` allowlist on the migration to scope discovery to
+just your slice:
+
+```hcl
+vault_mount_paths = [
+  "prod/app-1234-saas/gcp/",
+  "stage/app-1234-saas/gcp/",
+]
+```
+
+When non-empty, only mounts in the list are considered. Out-of-scope
+mounts are silently skipped, so a sibling team's malformed `gcp/` mount
+no longer crashes the plan. In-scope malformed mounts still fail the
+precondition.
+
+See also
+[`09-troubleshooting.md`](09-troubleshooting.md#vault-gcp-mounts-do-not-match-the-required-envappgcp-layout).
+
 ## Enabling the mount
 
 Replace `<env>`, `<app>`, and `<project>` with your values, and point
@@ -80,7 +102,7 @@ vault write "${ENV}/${APP}/gcp/config" credentials=@"${PARENT_SA_KEY}"
 
 ```bash
 curl -sH "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/sys/mounts" \
-  | jq '. | with_entries(select(.value.type=="gcp")) | keys'
+  | jq '.data | with_entries(select(.value.type=="gcp")) | keys'
 ```
 
 Expected:

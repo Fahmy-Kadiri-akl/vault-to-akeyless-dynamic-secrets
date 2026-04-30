@@ -21,6 +21,15 @@
 # vault_address = "https://vault.example.com"   # or set TF_VAR_vault_address
 # vault_token   = "hvs.xxxxx"                   # or set TF_VAR_vault_token (sensitive)
 
+# Optional allowlist of Vault GCP mount paths to migrate. Empty (default)
+# means every type=="gcp" mount from sys/mounts is in scope. Use this on
+# shared Vault servers where some mounts belong to other teams. Trailing
+# slash is optional.
+# vault_mount_paths = [
+#   "prod/app-1234-saas/gcp/",
+#   "stage/app-1234-saas/gcp/",
+# ]
+
 # ------------------------------------------------------------------
 # Akeyless
 # ------------------------------------------------------------------
@@ -28,10 +37,17 @@ akeyless_access_id    = "p-xxxxxxxxxxxx"
 akeyless_gcp_audience = "akeyless.io"
 
 # Your gateway's V2 SDK URL, NOT https://api.akeyless.io. Public api does not
-# expose dynamic-secret-create-gcp; only customer gateways do. Use whatever
-# URL your gateway is reachable on, with /v2 appended. Examples:
-#   https://gateway.example.com:8081/v2
-#   http://127.0.0.1:8081/v2
+# expose dynamic-secret-create-gcp; only customer gateways do. Two valid forms:
+#   - Direct SDK port (gateway exposed on its native :8081 or a port-forward):
+#     append "/v2", e.g.
+#       https://gateway.example.com:8081/v2
+#       http://127.0.0.1:8081/v2
+#   - Ingress-fronted gateway (nginx, Istio) on a path-based route: append
+#     "/api/v2", e.g.
+#       https://gateway.example.com/api/v2
+# Verify with `curl -sI "${URL}/configurations/get-status" -X POST` and
+# expect HTTP 400. A 404 means the suffix is wrong; flip between /v2 and
+# /api/v2 and retry.
 akeyless_gateway_url = "https://your-gateway.example.com:8081/v2"
 
 akeyless_target_name = "migrated-from-vault-gcp"
